@@ -10,8 +10,25 @@ export type CustomerSource =
   | "其他";
 
 export type CustomerGrade = "A" | "B" | "C";
-export type CustomerStatus = "new" | "follow" | "sample" | "closed" | "lost";
-export type TaskCategory = "inquiry" | "rfq" | "product" | "other" | "relationship";
+export type CustomerStatus =
+  | "no_reply_inquiry"
+  | "no_reply_quote"
+  | "no_reply_followup"
+  | "pending_quote"
+  | "catalog_sent"
+  | "price_negotiation"
+  | "pending_recommend"
+  | "pending_drawing"
+  | "pending_sample"
+  | "sample_sent"
+  | "no_order"
+  | "pending_factory"
+  | "factory_done"
+  | "pending_order"
+  | "closed"
+  | "lost";
+export type TaskCategory = "inquiry" | "rfq" | "product" | "other" | "relationship" | "data" | "development";
+export type FixedTaskCategory = "daily" | "weekly";
 
 export interface Database {
   public: {
@@ -21,6 +38,8 @@ export interface Database {
           id: string;
           name: string;
           country: string | null;
+          address: string | null;
+          phone: string | null;
           source: CustomerSource | null;
           grade: CustomerGrade | null;
           status: CustomerStatus | null;
@@ -38,6 +57,8 @@ export interface Database {
           id?: string;
           name: string;
           country?: string | null;
+          address?: string | null;
+          phone?: string | null;
           source?: CustomerSource | null;
           grade?: CustomerGrade | null;
           status?: CustomerStatus | null;
@@ -69,6 +90,58 @@ export interface Database {
           created_by?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["customer_logs"]["Insert"]>;
+      };
+      fixed_tasks: {
+        Row: {
+          id: string;
+          category: FixedTaskCategory;
+          weekday: number | null;
+          title: string;
+          task_category: TaskCategory;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          category: FixedTaskCategory;
+          weekday?: number | null;
+          title: string;
+          task_category: TaskCategory;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["fixed_tasks"]["Insert"]>;
+      };
+      daily_task_records: {
+        Row: {
+          id: string;
+          date: string;
+          fixed_task_id: string | null;
+          title: string;
+          category: TaskCategory;
+          done: boolean;
+          created_at: string;
+          updated_at: string;
+          created_by: string | null;
+          updated_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          date: string;
+          fixed_task_id?: string | null;
+          title: string;
+          category: TaskCategory;
+          done?: boolean;
+          created_at?: string;
+          updated_at?: string;
+          created_by?: string | null;
+          updated_by?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["daily_task_records"]["Insert"]>;
       };
       daily_tasks: {
         Row: {
@@ -134,5 +207,7 @@ export interface Database {
 
 export type Customer = Database["public"]["Tables"]["customers"]["Row"];
 export type CustomerLog = Database["public"]["Tables"]["customer_logs"]["Row"];
+export type FixedTask = Database["public"]["Tables"]["fixed_tasks"]["Row"];
+export type DailyTaskRecord = Database["public"]["Tables"]["daily_task_records"]["Row"];
 export type DailyTask = Database["public"]["Tables"]["daily_tasks"]["Row"];
 export type DailyStat = Database["public"]["Tables"]["daily_stats"]["Row"];

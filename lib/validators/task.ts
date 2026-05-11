@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const taskSchema = z.object({
   title: z.string().min(1, "请输入任务标题"),
-  category: z.enum(["inquiry", "rfq", "product", "other", "relationship"]),
+  category: z.enum(["inquiry", "rfq", "product", "other", "relationship", "data", "development"]),
 });
 
 export type TaskFormValues = z.infer<typeof taskSchema>;

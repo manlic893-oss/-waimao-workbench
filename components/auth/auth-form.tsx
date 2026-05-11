@@ -2,9 +2,10 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { Checkbox } from "@/components/ui/checkbox";
+import { createBrowserSupabaseClient, getRememberMePreference, setRememberMePreference } from "@/lib/supabase/client";
 import { authSchema, type AuthValues } from "@/lib/validators/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ export function AuthForm() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [message, setMessage] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const form = useForm<AuthValues>({
     resolver: zodResolver(authSchema),
     defaultValues: {
@@ -23,10 +25,15 @@ export function AuthForm() {
     },
   });
 
+  useEffect(() => {
+    setRememberMe(getRememberMePreference());
+  }, []);
+
   const onSubmit = async (values: AuthValues) => {
     try {
       setSubmitting(true);
       setMessage("");
+      setRememberMePreference(rememberMe);
       const supabase = createBrowserSupabaseClient();
 
       if (mode === "login") {
@@ -38,7 +45,7 @@ export function AuthForm() {
 
       const { error } = await supabase.auth.signUp(values);
       if (error) throw error;
-      setMessage("注册成功，请返回邮箱确认后登录。");
+      setMessage("注册成功，现在可以直接登录。");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "操作失败，请稍后再试。");
     } finally {
@@ -65,6 +72,13 @@ export function AuthForm() {
             <Input id="password" type="password" placeholder="至少 6 位" {...form.register("password")} />
             <p className="text-xs text-destructive">{form.formState.errors.password?.message}</p>
           </div>
+
+          {mode === "login" ? (
+            <div className="flex items-center justify-between rounded-2xl border border-border/80 bg-secondary/40 px-4 py-3">
+              <Checkbox checked={rememberMe} onChange={(event) => setRememberMe(event.currentTarget.checked)} label="记住我（30天）" />
+              <span className="text-xs text-muted-foreground">不勾选则关闭浏览器后需重新登录</span>
+            </div>
+          ) : null}
 
           {message ? <p className="rounded-2xl bg-secondary px-4 py-3 text-sm text-muted-foreground">{message}</p> : null}
 

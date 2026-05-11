@@ -2,12 +2,14 @@
 
 import type { InputHTMLAttributes } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { addDays } from "date-fns";
+import { addDays, getISODay } from "date-fns";
+import Link from "next/link";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { EnvNotice } from "@/components/shared/env-notice";
+import { FollowupNotifier } from "@/components/shared/followup-notifier";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,14 +23,17 @@ import { FIXED_TASK_TEMPLATES, TASK_CATEGORIES } from "@/lib/constants";
 import { hasSupabaseEnv } from "@/lib/env";
 import { formatDate, toDateInputValue } from "@/lib/utils";
 import { statsSchema, taskSchema, type StatsFormValues, type TaskFormValues } from "@/lib/validators/task";
-import type { DailyStat, DailyTask } from "@/types/database";
+import type { Customer, DailyStat, DailyTaskRecord, FixedTask } from "@/types/database";
 
 export function TasksClient() {
   const [date, setDate] = useState<Date>(new Date());
-  const [tasks, setTasks] = useState<DailyTask[]>([]);
+  const [tasks, setTasks] = useState<DailyTaskRecord[]>([]);
   const [stat, setStat] = useState<DailyStat | null>(null);
+  const [dueCount, setDueCount] = useState(0);
   const [savingStats, setSavingStats] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
 
   const taskForm = useForm<TaskFormValues>({
     resolver: zodResolver(taskSchema),
@@ -51,6 +56,28 @@ export function TasksClient() {
 
   const dateKey = toDateInputValue(date);
 
+  const seedFixedTasksIfNeeded = useCallback(async () => {
+    const supabase = createBrowserSupabaseClient();
+    const { data } = await supabase.from("fixed_tasks").select("*");
+    if ((data ?? []).length > 0) {
+      return (data ?? []) as FixedTask[];
+    }
+
+    await supabase.from("fixed_tasks").insert(
+      FIXED_TASK_TEMPLATES.map((item) => ({
+        category: item.category,
+        weekday: item.category === "weekly" ? item.weekday : null,
+        title: item.title,
+        task_category: item.taskCategory,
+        sort_order: item.sortOrder,
+        is_active: true,
+      })),
+    );
+
+    const { data: seeded } = await supabase.from("fixed_tasks").select("*").order("sort_order", { ascending: true });
+    return (seeded ?? []) as FixedTask[];
+  }, []);
+
   const hydrateForDate = useCallback(async () => {
     if (!hasSupabaseEnv()) return;
 
@@ -59,20 +86,25 @@ export function TasksClient() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const existingTasksResult = await supabase.from("daily_tasks").select("*").eq("date", dateKey);
-    const existingTasks = existingTasksResult.data ?? [];
-    const existingTemplateKeys = new Set(existingTasks.filter((task) => task.template_key).map((task) => task.template_key));
+    const allFixedTasks = await seedFixedTasksIfNeeded();
 
-    const missingTemplates = FIXED_TASK_TEMPLATES.filter((item) => !existingTemplateKeys.has(item.templateKey));
+    const weekday = getISODay(date);
+    const activeTemplates = allFixedTasks.filter(
+      (task) => task.is_active && (task.category === "daily" || (task.category === "weekly" && task.weekday === weekday)),
+    );
 
-    if (missingTemplates.length > 0) {
-      await supabase.from("daily_tasks").insert(
-        missingTemplates.map((item) => ({
+    const existingRecordsResult = await supabase.from("daily_task_records").select("*").eq("date", dateKey);
+    const existingRecords = (existingRecordsResult.data ?? []) as DailyTaskRecord[];
+    const existingFixedTaskIds = new Set(existingRecords.map((record) => record.fixed_task_id).filter(Boolean));
+
+    const missingRecords = activeTemplates.filter((task) => !existingFixedTaskIds.has(task.id));
+    if (missingRecords.length > 0) {
+      await supabase.from("daily_task_records").insert(
+        missingRecords.map((task) => ({
           date: dateKey,
-          title: item.title,
-          category: item.category,
-          is_template: true,
-          template_key: item.templateKey,
+          fixed_task_id: task.id,
+          title: task.title,
+          category: task.task_category,
           done: false,
           created_by: user?.id ?? null,
           updated_by: user?.id ?? null,
@@ -80,14 +112,17 @@ export function TasksClient() {
       );
     }
 
-    const [tasksResult, statsResult] = await Promise.all([
-      supabase.from("daily_tasks").select("*").eq("date", dateKey).order("created_at", { ascending: true }),
+    const [recordsResult, statsResult, customersResult] = await Promise.all([
+      supabase.from("daily_task_records").select("*").eq("date", dateKey).order("created_at", { ascending: true }),
       supabase.from("daily_stats").select("*").eq("date", dateKey).maybeSingle(),
+      supabase.from("customers").select("id,next_follow_date").lte("next_follow_date", dateKey),
     ]);
 
-    if (!tasksResult.error) setTasks(tasksResult.data ?? []);
+    if (!recordsResult.error) setTasks((recordsResult.data ?? []) as DailyTaskRecord[]);
+    if (!customersResult.error) setDueCount(((customersResult.data ?? []) as Array<Pick<Customer, "id" | "next_follow_date">>).length);
+
     if (!statsResult.error) {
-      setStat(statsResult.data ?? null);
+      setStat((statsResult.data as DailyStat | null) ?? null);
       statsForm.reset({
         inquiry_count: statsResult.data?.inquiry_count ?? 0,
         rfq_sent: statsResult.data?.rfq_sent ?? 0,
@@ -96,7 +131,7 @@ export function TasksClient() {
         notes: statsResult.data?.notes ?? "",
       });
     }
-  }, [dateKey, statsForm]);
+  }, [date, dateKey, seedFixedTasksIfNeeded, statsForm]);
 
   useEffect(() => {
     hydrateForDate();
@@ -106,8 +141,10 @@ export function TasksClient() {
     const supabase = createBrowserSupabaseClient();
     const channel = supabase
       .channel(`tasks-${dateKey}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "daily_tasks" }, hydrateForDate)
+      .on("postgres_changes", { event: "*", schema: "public", table: "daily_task_records" }, hydrateForDate)
       .on("postgres_changes", { event: "*", schema: "public", table: "daily_stats" }, hydrateForDate)
+      .on("postgres_changes", { event: "*", schema: "public", table: "fixed_tasks" }, hydrateForDate)
+      .on("postgres_changes", { event: "*", schema: "public", table: "customers" }, hydrateForDate)
       .subscribe();
 
     return () => {
@@ -132,11 +169,11 @@ export function TasksClient() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const { error } = await supabase.from("daily_tasks").insert({
+    const { error } = await supabase.from("daily_task_records").insert({
       date: dateKey,
       title: values.title,
       category: values.category,
-      is_template: false,
+      fixed_task_id: null,
       done: false,
       created_by: user?.id ?? null,
       updated_by: user?.id ?? null,
@@ -148,20 +185,37 @@ export function TasksClient() {
     setCreatingTask(false);
   });
 
-  const handleToggleTask = async (task: DailyTask) => {
+  const handleToggleTask = async (task: DailyTaskRecord) => {
     const supabase = createBrowserSupabaseClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     await supabase
-      .from("daily_tasks")
+      .from("daily_task_records")
       .update({ done: !task.done, updated_by: user?.id ?? null })
       .eq("id", task.id);
   };
 
   const handleDeleteTask = async (taskId: string) => {
     const supabase = createBrowserSupabaseClient();
-    await supabase.from("daily_tasks").delete().eq("id", taskId);
+    await supabase.from("daily_task_records").delete().eq("id", taskId);
+  };
+
+  const startEditFixedTask = (task: DailyTaskRecord) => {
+    if (!task.fixed_task_id) return;
+    setEditingRecordId(task.id);
+    setEditingTitle(task.title);
+  };
+
+  const handleSaveEditedTitle = async (task: DailyTaskRecord) => {
+    if (!task.fixed_task_id) return;
+    const supabase = createBrowserSupabaseClient();
+    await Promise.all([
+      supabase.from("fixed_tasks").update({ title: editingTitle }).eq("id", task.fixed_task_id),
+      supabase.from("daily_task_records").update({ title: editingTitle }).eq("id", task.id),
+    ]);
+    setEditingRecordId(null);
+    setEditingTitle("");
   };
 
   const handleSaveStats = statsForm.handleSubmit(async (values) => {
@@ -195,8 +249,20 @@ export function TasksClient() {
       <section className="space-y-2">
         <Badge>每日工作清单</Badge>
         <h1 className="text-3xl font-semibold">今日执行面板</h1>
-        <p className="text-sm text-muted-foreground">每天打开页面自动补齐固定任务，再把自定义任务和当日数据补完整。</p>
+        <p className="text-sm text-muted-foreground">固定任务按日期自动生成，周任务会在对应星期自动出现，历史完成状态保留不重置。</p>
       </section>
+
+      {dueCount > 0 ? (
+        <div className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+          今日有 <span className="font-semibold">{dueCount}</span> 位客户需要跟进，
+          <Link className="ml-1 font-semibold underline underline-offset-4" href="/customers?filter=due-today">
+            点击直达客户管理
+          </Link>
+          。
+        </div>
+      ) : null}
+
+      <FollowupNotifier dueCount={dueCount} />
 
       <section className="flex flex-col gap-4 rounded-[1.75rem] border bg-white/90 p-5 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
@@ -205,7 +271,7 @@ export function TasksClient() {
           </Button>
           <div>
             <p className="text-sm text-muted-foreground">当前查看日期</p>
-            <p className="text-xl font-semibold">{formatDate(date)}</p>
+            <p className="text-xl font-semibold">{formatDate(date, "yyyy年MM月dd日")}</p>
           </div>
           <Button variant="outline" size="icon" onClick={() => setDate((current) => addDays(current, 1))}>
             <ChevronRight className="h-4 w-4" />
@@ -216,7 +282,7 @@ export function TasksClient() {
           <div className="flex items-center justify-between text-sm">
             <span>完成进度</span>
             <span className="font-medium">
-              已完成 {completedCount} / 总计 {tasks.length} 项
+              已完成 {completedCount} / 总计 {tasks.length} 项（{progressValue}%）
             </span>
           </div>
           <Progress value={progressValue} />
@@ -239,22 +305,46 @@ export function TasksClient() {
                   <div className="space-y-3">
                     {group.items.map((task) => (
                       <div key={task.id} className="flex items-center justify-between rounded-2xl border bg-white/60 p-4">
-                        <div className="flex items-center gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
                           <Checkbox checked={task.done} onChange={() => handleToggleTask(task)} />
-                          <div>
-                            <p className={task.done ? "text-sm text-muted-foreground line-through" : "text-sm font-medium"}>
-                              {task.title}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {task.is_template ? "固定任务" : "自定义任务"}
-                            </p>
+                          <div className="min-w-0">
+                            {editingRecordId === task.id ? (
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={editingTitle}
+                                  onChange={(event) => setEditingTitle(event.target.value)}
+                                  onBlur={() => void handleSaveEditedTitle(task)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      void handleSaveEditedTitle(task);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <p
+                                className={task.done ? "text-sm text-muted-foreground line-through" : "text-sm font-medium"}
+                                onDoubleClick={() => startEditFixedTask(task)}
+                              >
+                                {task.title}
+                              </p>
+                            )}
+                            <p className="mt-1 text-xs text-muted-foreground">{task.fixed_task_id ? "固定任务" : "自定义任务"}</p>
                           </div>
                         </div>
-                        {!task.is_template ? (
-                          <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(task.id)}>
-                            <Trash2 className="h-4 w-4 text-muted-foreground" />
-                          </Button>
-                        ) : null}
+                        <div className="flex items-center gap-1">
+                          {task.fixed_task_id ? (
+                            <Button variant="ghost" size="icon" onClick={() => startEditFixedTask(task)}>
+                              <Pencil className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          ) : null}
+                          {!task.fixed_task_id ? (
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(task.id)}>
+                              <Trash2 className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -265,7 +355,7 @@ export function TasksClient() {
 
           <Card>
             <CardHeader>
-              <CardTitle>添加自定义任务</CardTitle>
+              <CardTitle>添加今日任务</CardTitle>
             </CardHeader>
             <CardContent>
               <form className="grid gap-4 md:grid-cols-[1fr_180px_auto]" onSubmit={handleCreateTask}>

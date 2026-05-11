@@ -11,14 +11,14 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { hasSupabaseEnv } from "@/lib/env";
 import { formatDate, toDateInputValue, isDueTodayOrOverdue } from "@/lib/utils";
 import { CUSTOMER_STATUSES } from "@/lib/constants";
-import type { Customer, DailyStat, DailyTask } from "@/types/database";
+import type { Customer, DailyStat, DailyTaskRecord } from "@/types/database";
 
 const pieColors = ["#3B5BDB", "#748FFC", "#A5B4FC", "#CBD5E1", "#8B5CF6", "#22C55E", "#F59E0B"];
 
 export function DashboardClient() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [stats, setStats] = useState<DailyStat[]>([]);
-  const [tasks, setTasks] = useState<DailyTask[]>([]);
+  const [tasks, setTasks] = useState<DailyTaskRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadDashboard = useCallback(async () => {
@@ -38,7 +38,7 @@ export function DashboardClient() {
         .select("*")
         .gte("date", toDateInputValue(thirtyDaysAgo))
         .order("date", { ascending: true }),
-      supabase.from("daily_tasks").select("*").eq("date", toDateInputValue(today)),
+      supabase.from("daily_task_records").select("*").eq("date", toDateInputValue(today)),
     ]);
 
     if (!customersResult.error) setCustomers(customersResult.data ?? []);
@@ -57,7 +57,7 @@ export function DashboardClient() {
     const channel = supabase
       .channel("dashboard-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "customers" }, loadDashboard)
-      .on("postgres_changes", { event: "*", schema: "public", table: "daily_tasks" }, loadDashboard)
+      .on("postgres_changes", { event: "*", schema: "public", table: "daily_task_records" }, loadDashboard)
       .on("postgres_changes", { event: "*", schema: "public", table: "daily_stats" }, loadDashboard)
       .subscribe();
 

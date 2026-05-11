@@ -3,6 +3,8 @@ import { z } from "zod";
 export const customerSchema = z.object({
   name: z.string().min(1, "请输入客户名"),
   country: z.string().optional(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
   source: z.string().optional(),
   grade: z.string().optional(),
   status: z.string().optional(),
@@ -20,3 +22,14 @@ export const customerLogSchema = z.object({
 });
 
 export type CustomerLogValues = z.infer<typeof customerLogSchema>;
+
+export const quickCustomerSchema = z.object({
+  name: z.string().min(1, "请输入客户名"),
+  country: z.string().optional(),
+  grade: z.string().optional(),
+  source: z.string().optional(),
+  product: z.string().optional(),
+  initialLog: z.string().optional(),
+});
+
+export type QuickCustomerFormValues = z.infer<typeof quickCustomerSchema>;

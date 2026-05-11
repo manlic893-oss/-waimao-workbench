@@ -28,6 +28,7 @@ import type { Customer, DailyStat, DailyTaskRecord, FixedTask } from "@/types/da
 export function TasksClient() {
   const [date, setDate] = useState<Date>(new Date());
   const [tasks, setTasks] = useState<DailyTaskRecord[]>([]);
+  const [fixedTasks, setFixedTasks] = useState<FixedTask[]>([]);
   const [stat, setStat] = useState<DailyStat | null>(null);
   const [dueCount, setDueCount] = useState(0);
   const [savingStats, setSavingStats] = useState(false);
@@ -87,6 +88,7 @@ export function TasksClient() {
     } = await supabase.auth.getUser();
 
     const allFixedTasks = await seedFixedTasksIfNeeded();
+    setFixedTasks(allFixedTasks);
 
     const weekday = getISODay(date);
     const activeTemplates = allFixedTasks.filter(
@@ -155,12 +157,48 @@ export function TasksClient() {
   const completedCount = tasks.filter((task) => task.done).length;
   const progressValue = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
 
-  const groupedTasks = useMemo(() => {
-    return TASK_CATEGORIES.map((category) => ({
-      ...category,
-      items: tasks.filter((task) => task.category === category.value),
-    })).filter((group) => group.items.length > 0);
-  }, [tasks]);
+  const fixedTaskMap = useMemo(() => new Map(fixedTasks.map((task) => [task.id, task])), [fixedTasks]);
+
+  const taskSections = useMemo(() => {
+    const dailyFixedTasks: DailyTaskRecord[] = [];
+    const weeklyFixedTasks: DailyTaskRecord[] = [];
+    const customTasks: DailyTaskRecord[] = [];
+
+    for (const task of tasks) {
+      if (!task.fixed_task_id) {
+        customTasks.push(task);
+        continue;
+      }
+
+      const fixedTask = fixedTaskMap.get(task.fixed_task_id);
+      if (fixedTask?.category === "weekly") {
+        weeklyFixedTasks.push(task);
+      } else {
+        dailyFixedTasks.push(task);
+      }
+    }
+
+    return [
+      {
+        key: "daily-fixed",
+        title: "每日固定任务",
+        description: "每天都会自动生成，适合日常必须完成的动作。",
+        items: dailyFixedTasks,
+      },
+      {
+        key: "weekly-fixed",
+        title: "每周固定任务",
+        description: "只会在指定星期出现，用来安排阶段性重点工作。",
+        items: weeklyFixedTasks,
+      },
+      {
+        key: "custom",
+        title: "自定义任务",
+        description: "临时新增、只属于当天的个人安排。",
+        items: customTasks,
+      },
+    ].filter((section) => section.items.length > 0);
+  }, [fixedTaskMap, tasks]);
 
   const handleCreateTask = taskForm.handleSubmit(async (values) => {
     setCreatingTask(true);
@@ -296,14 +334,20 @@ export function TasksClient() {
               <CardTitle>任务列表</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              {groupedTasks.map((group) => (
-                <div key={group.value} className="space-y-3">
+              {taskSections.map((section) => (
+                <div key={section.key} className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium">{group.label}</p>
-                    <span className="text-xs text-muted-foreground">{group.items.length} 项</span>
+                    <div>
+                      <p className="font-medium">{section.title}</p>
+                      <p className="text-xs text-muted-foreground">{section.description}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{section.items.length} 项</span>
                   </div>
                   <div className="space-y-3">
-                    {group.items.map((task) => (
+                    {section.items.map((task) => {
+                      const categoryLabel = TASK_CATEGORIES.find((item) => item.value === task.category)?.label ?? "其他";
+
+                      return (
                       <div key={task.id} className="flex items-center justify-between rounded-2xl border bg-white/60 p-4">
                         <div className="flex min-w-0 items-center gap-3">
                           <Checkbox checked={task.done} onChange={() => handleToggleTask(task)} />
@@ -330,7 +374,11 @@ export function TasksClient() {
                                 {task.title}
                               </p>
                             )}
-                            <p className="mt-1 text-xs text-muted-foreground">{task.fixed_task_id ? "固定任务" : "自定义任务"}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>{task.fixed_task_id ? "固定任务" : "自定义任务"}</span>
+                              <span>·</span>
+                              <span>{categoryLabel}</span>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
@@ -346,7 +394,7 @@ export function TasksClient() {
                           ) : null}
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
               ))}

@@ -33,6 +33,8 @@ export function TasksClient() {
   const [dueCount, setDueCount] = useState(0);
   const [savingStats, setSavingStats] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
+  const [taskNotice, setTaskNotice] = useState<string>("");
+  const [statsNotice, setStatsNotice] = useState<string>("");
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
 
@@ -165,6 +167,8 @@ export function TasksClient() {
   }, [dateKey, hydrateForDate]);
 
   const completedCount = tasks.filter((task) => task.done).length;
+  const customTaskCount = tasks.filter((task) => !task.fixed_task_id).length;
+  const pendingCount = tasks.length - completedCount;
   const progressValue = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
 
   const fixedTaskMap = useMemo(() => new Map(fixedTasks.map((task) => [task.id, task])), [fixedTasks]);
@@ -233,6 +237,7 @@ export function TasksClient() {
 
     if (!error) {
       taskForm.reset({ title: "", category: "other" });
+      setTaskNotice("今日任务已添加，可以继续补充或删除。");
     }
     setCreatingTask(false);
   });
@@ -248,6 +253,7 @@ export function TasksClient() {
       .update({ done: !task.done, updated_by: user?.id ?? null })
       .eq("id", task.id)
       .eq("created_by", user.id);
+    setTaskNotice(!task.done ? "任务已标记为完成。" : "任务已重新改为未完成。");
   };
 
   const handleDeleteTask = async (taskId: string) => {
@@ -257,6 +263,7 @@ export function TasksClient() {
     } = await supabase.auth.getUser();
     if (!user?.id) return;
     await supabase.from("daily_task_records").delete().eq("id", taskId).eq("created_by", user.id);
+    setTaskNotice("自定义任务已删除。");
   };
 
   const startEditFixedTask = (task: DailyTaskRecord) => {
@@ -278,6 +285,7 @@ export function TasksClient() {
     ]);
     setEditingRecordId(null);
     setEditingTitle("");
+    setTaskNotice("固定任务标题已更新。");
   };
 
   const handleSaveStats = statsForm.handleSubmit(async (values) => {
@@ -306,6 +314,7 @@ export function TasksClient() {
       { onConflict: "date,created_by" },
     );
 
+    setStatsNotice("今日数据和每日总结已保存，可以随时回来修改。");
     setSavingStats(false);
   });
 
@@ -358,13 +367,22 @@ export function TasksClient() {
         </div>
       </section>
 
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MiniStatCard title="我的任务总数" value={`${tasks.length} 项`} />
+        <MiniStatCard title="已完成任务" value={`${completedCount} 项`} />
+        <MiniStatCard title="待完成任务" value={`${pendingCount} 项`} />
+        <MiniStatCard title="自定义任务" value={`${customTaskCount} 项`} />
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>任务列表</CardTitle>
+              <p className="text-sm text-muted-foreground">固定任务自动生成，自定义任务可以随时新增或删除。</p>
             </CardHeader>
             <CardContent className="space-y-5">
+              {taskNotice ? <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{taskNotice}</div> : null}
               {taskSections.map((section) => (
                 <div key={section.key} className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -434,7 +452,8 @@ export function TasksClient() {
 
           <Card>
             <CardHeader>
-              <CardTitle>添加今日任务</CardTitle>
+              <CardTitle>增减今日任务项目</CardTitle>
+              <p className="text-sm text-muted-foreground">这里添加的是你今天临时增加的任务项目，自定义任务可以单独删除。</p>
             </CardHeader>
             <CardContent>
               <form className="grid gap-4 md:grid-cols-[1fr_180px_auto]" onSubmit={handleCreateTask}>
@@ -461,8 +480,10 @@ export function TasksClient() {
         <Card>
           <CardHeader>
             <CardTitle>每日数据填报</CardTitle>
+            <p className="text-sm text-muted-foreground">以下数据按当前账号单独保存，之后打开同一天仍然可以继续修改。</p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {statsNotice ? <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{statsNotice}</div> : null}
             <form className="space-y-4" onSubmit={handleSaveStats}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <NumericField label="今日询盘数" inputProps={statsForm.register("inquiry_count", { valueAsNumber: true })} />
@@ -471,12 +492,16 @@ export function TasksClient() {
                 <NumericField label="成交订单数" inputProps={statsForm.register("orders_closed", { valueAsNumber: true })} />
               </div>
               <div>
-                <Label className="mb-2 block">今日备注</Label>
-                <Textarea placeholder="记录今天的重要情况、问题或亮点" {...statsForm.register("notes")} />
+                <Label className="mb-2 block">每日总结</Label>
+                <Textarea
+                  placeholder="总结今天做了什么、效果如何、遇到了什么问题、明天准备跟进什么。"
+                  rows={6}
+                  {...statsForm.register("notes")}
+                />
               </div>
               <Button type="submit" disabled={savingStats}>
                 {savingStats ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                保存今日数据
+                保存今日数据与总结
               </Button>
             </form>
           </CardContent>
@@ -498,5 +523,16 @@ function NumericField({
       <Label className="mb-2 block">{label}</Label>
       <Input type="number" min={0} {...inputProps} />
     </div>
+  );
+}
+
+function MiniStatCard({ title, value }: { title: string; value: string }) {
+  return (
+    <Card>
+      <CardContent className="space-y-2 p-5">
+        <p className="text-sm text-muted-foreground">{title}</p>
+        <p className="text-2xl font-semibold">{value}</p>
+      </CardContent>
+    </Card>
   );
 }

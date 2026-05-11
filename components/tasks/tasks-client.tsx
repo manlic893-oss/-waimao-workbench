@@ -86,6 +86,7 @@ export function TasksClient() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    if (!user?.id) return;
 
     const allFixedTasks = await seedFixedTasksIfNeeded();
     setFixedTasks(allFixedTasks);
@@ -95,7 +96,11 @@ export function TasksClient() {
       (task) => task.is_active && (task.category === "daily" || (task.category === "weekly" && task.weekday === weekday)),
     );
 
-    const existingRecordsResult = await supabase.from("daily_task_records").select("*").eq("date", dateKey);
+    const existingRecordsResult = await supabase
+      .from("daily_task_records")
+      .select("*")
+      .eq("date", dateKey)
+      .eq("created_by", user.id);
     const existingRecords = (existingRecordsResult.data ?? []) as DailyTaskRecord[];
     const existingFixedTaskIds = new Set(existingRecords.map((record) => record.fixed_task_id).filter(Boolean));
 
@@ -115,8 +120,13 @@ export function TasksClient() {
     }
 
     const [recordsResult, statsResult, customersResult] = await Promise.all([
-      supabase.from("daily_task_records").select("*").eq("date", dateKey).order("created_at", { ascending: true }),
-      supabase.from("daily_stats").select("*").eq("date", dateKey).maybeSingle(),
+      supabase
+        .from("daily_task_records")
+        .select("*")
+        .eq("date", dateKey)
+        .eq("created_by", user.id)
+        .order("created_at", { ascending: true }),
+      supabase.from("daily_stats").select("*").eq("date", dateKey).eq("created_by", user.id).maybeSingle(),
       supabase.from("customers").select("id,next_follow_date").lte("next_follow_date", dateKey),
     ]);
 
@@ -206,6 +216,10 @@ export function TasksClient() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    if (!user?.id) {
+      setCreatingTask(false);
+      return;
+    }
 
     const { error } = await supabase.from("daily_task_records").insert({
       date: dateKey,
@@ -214,7 +228,7 @@ export function TasksClient() {
       fixed_task_id: null,
       done: false,
       created_by: user?.id ?? null,
-      updated_by: user?.id ?? null,
+      updated_by: user.id,
     });
 
     if (!error) {
@@ -228,15 +242,21 @@ export function TasksClient() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    if (!user?.id) return;
     await supabase
       .from("daily_task_records")
       .update({ done: !task.done, updated_by: user?.id ?? null })
-      .eq("id", task.id);
+      .eq("id", task.id)
+      .eq("created_by", user.id);
   };
 
   const handleDeleteTask = async (taskId: string) => {
     const supabase = createBrowserSupabaseClient();
-    await supabase.from("daily_task_records").delete().eq("id", taskId);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user?.id) return;
+    await supabase.from("daily_task_records").delete().eq("id", taskId).eq("created_by", user.id);
   };
 
   const startEditFixedTask = (task: DailyTaskRecord) => {
@@ -248,9 +268,13 @@ export function TasksClient() {
   const handleSaveEditedTitle = async (task: DailyTaskRecord) => {
     if (!task.fixed_task_id) return;
     const supabase = createBrowserSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user?.id) return;
     await Promise.all([
       supabase.from("fixed_tasks").update({ title: editingTitle }).eq("id", task.fixed_task_id),
-      supabase.from("daily_task_records").update({ title: editingTitle }).eq("id", task.id),
+      supabase.from("daily_task_records").update({ title: editingTitle }).eq("id", task.id).eq("created_by", user.id),
     ]);
     setEditingRecordId(null);
     setEditingTitle("");
@@ -262,18 +286,25 @@ export function TasksClient() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    if (!user?.id) {
+      setSavingStats(false);
+      return;
+    }
 
-    await supabase.from("daily_stats").upsert({
-      id: stat?.id,
-      date: dateKey,
-      inquiry_count: values.inquiry_count,
-      rfq_sent: values.rfq_sent,
-      new_products: values.new_products,
-      orders_closed: values.orders_closed,
-      notes: values.notes || null,
-      created_by: stat?.created_by ?? user?.id ?? null,
-      updated_by: user?.id ?? null,
-    });
+    await supabase.from("daily_stats").upsert(
+      {
+        id: stat?.id,
+        date: dateKey,
+        inquiry_count: values.inquiry_count,
+        rfq_sent: values.rfq_sent,
+        new_products: values.new_products,
+        orders_closed: values.orders_closed,
+        notes: values.notes || null,
+        created_by: stat?.created_by ?? user.id,
+        updated_by: user.id,
+      },
+      { onConflict: "date,created_by" },
+    );
 
     setSavingStats(false);
   });

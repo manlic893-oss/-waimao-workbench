@@ -151,7 +151,7 @@ create table if not exists public.daily_tasks (
 
 create table if not exists public.daily_stats (
   id uuid primary key default gen_random_uuid(),
-  date date not null unique,
+  date date not null,
   inquiry_count integer not null default 0,
   rfq_sent integer not null default 0,
   new_products integer not null default 0,
@@ -169,9 +169,16 @@ create index if not exists idx_customer_logs_customer_id on public.customer_logs
 create index if not exists idx_fixed_tasks_category on public.fixed_tasks(category, weekday, is_active);
 create index if not exists idx_daily_task_records_date on public.daily_task_records(date);
 create index if not exists idx_daily_tasks_date on public.daily_tasks(date);
+create unique index if not exists idx_daily_task_records_owner_unique
+on public.daily_task_records(date, created_by, fixed_task_id)
+where fixed_task_id is not null and created_by is not null;
+create unique index if not exists idx_daily_stats_owner_unique
+on public.daily_stats(date, created_by)
+where created_by is not null;
 
 alter table public.customers add column if not exists address text;
 alter table public.customers add column if not exists phone text;
+alter table public.daily_stats drop constraint if exists daily_stats_date_key;
 
 create unique index if not exists idx_daily_tasks_template_unique
 on public.daily_tasks(date, template_key)
@@ -275,12 +282,35 @@ using (true)
 with check (true);
 
 drop policy if exists "authenticated users can manage daily_task_records" on public.daily_task_records;
-create policy "authenticated users can manage daily_task_records"
+drop policy if exists "users can view own daily_task_records" on public.daily_task_records;
+drop policy if exists "users can insert own daily_task_records" on public.daily_task_records;
+drop policy if exists "users can update own daily_task_records" on public.daily_task_records;
+drop policy if exists "users can delete own daily_task_records" on public.daily_task_records;
+
+create policy "users can view own daily_task_records"
 on public.daily_task_records
-for all
+for select
 to authenticated
-using (true)
-with check (true);
+using (created_by = auth.uid());
+
+create policy "users can insert own daily_task_records"
+on public.daily_task_records
+for insert
+to authenticated
+with check (created_by = auth.uid());
+
+create policy "users can update own daily_task_records"
+on public.daily_task_records
+for update
+to authenticated
+using (created_by = auth.uid())
+with check (created_by = auth.uid());
+
+create policy "users can delete own daily_task_records"
+on public.daily_task_records
+for delete
+to authenticated
+using (created_by = auth.uid());
 
 drop policy if exists "authenticated users can manage daily_tasks" on public.daily_tasks;
 create policy "authenticated users can manage daily_tasks"
@@ -291,12 +321,35 @@ using (true)
 with check (true);
 
 drop policy if exists "authenticated users can manage daily_stats" on public.daily_stats;
-create policy "authenticated users can manage daily_stats"
+drop policy if exists "users can view own daily_stats" on public.daily_stats;
+drop policy if exists "users can insert own daily_stats" on public.daily_stats;
+drop policy if exists "users can update own daily_stats" on public.daily_stats;
+drop policy if exists "users can delete own daily_stats" on public.daily_stats;
+
+create policy "users can view own daily_stats"
 on public.daily_stats
-for all
+for select
 to authenticated
-using (true)
-with check (true);
+using (created_by = auth.uid());
+
+create policy "users can insert own daily_stats"
+on public.daily_stats
+for insert
+to authenticated
+with check (created_by = auth.uid());
+
+create policy "users can update own daily_stats"
+on public.daily_stats
+for update
+to authenticated
+using (created_by = auth.uid())
+with check (created_by = auth.uid());
+
+create policy "users can delete own daily_stats"
+on public.daily_stats
+for delete
+to authenticated
+using (created_by = auth.uid());
 
 insert into public.fixed_tasks (category, weekday, title, task_category, sort_order, is_active)
 select seed.category, seed.weekday, seed.title, seed.task_category, seed.sort_order, true

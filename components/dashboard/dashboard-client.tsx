@@ -48,8 +48,13 @@ export function DashboardClient() {
         .from("daily_stats")
         .select("*")
         .gte("date", toDateInputValue(thirtyDaysAgo))
+        .eq("created_by", user?.id ?? "")
         .order("date", { ascending: true }),
-      supabase.from("daily_task_records").select("*").eq("date", toDateInputValue(today)),
+      supabase
+        .from("daily_task_records")
+        .select("*")
+        .eq("date", toDateInputValue(today))
+        .eq("created_by", user?.id ?? ""),
     ]);
 
     if (!customersResult.error) setOwnCustomers(customersResult.data ?? []);

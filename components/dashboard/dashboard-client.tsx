@@ -15,10 +15,20 @@ import type { Customer, DailyStat, DailyTaskRecord } from "@/types/database";
 
 const pieColors = ["#3B5BDB", "#748FFC", "#A5B4FC", "#CBD5E1", "#8B5CF6", "#22C55E", "#F59E0B"];
 
+type TeamCustomerDashboard = {
+  totalCount: number;
+  dueCount: number;
+  gradeACount: number;
+  closedCount: number;
+  sourceData: Array<{ name: string; value: number }>;
+  funnelData: Array<{ status: string; value: number }>;
+};
+
 export function DashboardClient() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [ownCustomers, setOwnCustomers] = useState<Customer[]>([]);
   const [stats, setStats] = useState<DailyStat[]>([]);
   const [tasks, setTasks] = useState<DailyTaskRecord[]>([]);
+  const [teamDashboard, setTeamDashboard] = useState<TeamCustomerDashboard | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadDashboard = useCallback(async () => {
@@ -31,7 +41,7 @@ export function DashboardClient() {
     const today = new Date();
     const thirtyDaysAgo = subDays(today, 29);
 
-    const [customersResult, statsResult, tasksResult] = await Promise.all([
+    const [customersResult, statsResult, tasksResult, dashboardResult] = await Promise.all([
       supabase.from("customers").select("*"),
       supabase
         .from("daily_stats")
@@ -39,11 +49,13 @@ export function DashboardClient() {
         .gte("date", toDateInputValue(thirtyDaysAgo))
         .order("date", { ascending: true }),
       supabase.from("daily_task_records").select("*").eq("date", toDateInputValue(today)),
+      supabase.rpc("get_team_customer_dashboard"),
     ]);
 
-    if (!customersResult.error) setCustomers(customersResult.data ?? []);
+    if (!customersResult.error) setOwnCustomers(customersResult.data ?? []);
     if (!statsResult.error) setStats(statsResult.data ?? []);
     if (!tasksResult.error) setTasks(tasksResult.data ?? []);
+    if (!dashboardResult.error && dashboardResult.data) setTeamDashboard(dashboardResult.data as TeamCustomerDashboard);
 
     setLoading(false);
   }, []);
@@ -110,27 +122,20 @@ export function DashboardClient() {
     () =>
       CUSTOMER_STATUSES.filter((status) => status.value !== "lost").map((status) => ({
         label: status.label,
-        value: customers.filter((customer) => customer.status === status.value).length,
+        value: teamDashboard?.funnelData.find((item) => item.status === status.value)?.value ?? 0,
       })),
-    [customers],
+    [teamDashboard],
   );
 
-  const sourceData = useMemo(() => {
-    const sourceMap = new Map<string, number>();
-    customers.forEach((customer) => {
-      const key = customer.source ?? "未填写";
-      sourceMap.set(key, (sourceMap.get(key) ?? 0) + 1);
-    });
-    return Array.from(sourceMap.entries()).map(([name, value]) => ({ name, value }));
-  }, [customers]);
+  const sourceData = useMemo(() => teamDashboard?.sourceData ?? [], [teamDashboard]);
 
   const todayFollowups = useMemo(
     () =>
-      customers
+      ownCustomers
         .filter((customer) => isDueTodayOrOverdue(customer.next_follow_date))
         .sort((a, b) => (a.next_follow_date ?? "").localeCompare(b.next_follow_date ?? ""))
         .slice(0, 5),
-    [customers],
+    [ownCustomers],
   );
 
   const undoneTasks = tasks.filter((task) => !task.done).length;
@@ -193,7 +198,7 @@ export function DashboardClient() {
                 <div className="rounded-2xl bg-white p-3 text-primary">
                   <BarChart3 className="h-5 w-5" />
                 </div>
-                <div>
+               <div>
                   <p className="text-sm text-muted-foreground">今日未完成任务</p>
                   <p className="text-2xl font-semibold">{undoneTasks} 项</p>
                 </div>
@@ -202,7 +207,7 @@ export function DashboardClient() {
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">今日需跟进客户</p>
+                <p className="text-sm font-medium">我今日需跟进的客户</p>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </div>
               {todayFollowups.length > 0 ? (
@@ -226,7 +231,7 @@ export function DashboardClient() {
         <Card>
           <CardHeader>
             <CardTitle>客户漏斗</CardTitle>
-            <CardDescription>按客户跟进状态聚合，查看当前转化分布。</CardDescription>
+            <CardDescription>按团队全部客户的跟进状态聚合，查看当前转化分布。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {funnelData.map((item, index) => (
@@ -239,7 +244,7 @@ export function DashboardClient() {
                   <div
                     className="h-2 rounded-full"
                     style={{
-                      width: `${customers.length ? (item.value / customers.length) * 100 : 0}%`,
+                      width: `${teamDashboard?.totalCount ? (item.value / teamDashboard.totalCount) * 100 : 0}%`,
                       backgroundColor: pieColors[index],
                     }}
                   />
@@ -252,7 +257,7 @@ export function DashboardClient() {
         <Card>
           <CardHeader>
             <CardTitle>客户来源分布</CardTitle>
-            <CardDescription>了解当前客户更多来自哪些渠道。</CardDescription>
+            <CardDescription>按团队全部客户统计当前客户更多来自哪些渠道。</CardDescription>
           </CardHeader>
           <CardContent className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">

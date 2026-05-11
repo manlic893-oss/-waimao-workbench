@@ -10,6 +10,62 @@ begin
 end;
 $$;
 
+create or replace function public.get_team_customer_dashboard()
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'totalCount',
+    count(*)::int,
+    'dueCount',
+    count(*) filter (where next_follow_date is not null and next_follow_date <= current_date)::int,
+    'gradeACount',
+    count(*) filter (where grade = 'A')::int,
+    'closedCount',
+    count(*) filter (where status = 'closed')::int,
+    'sourceData',
+    coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object(
+            'name', grouped.source_name,
+            'value', grouped.total
+          )
+          order by grouped.total desc, grouped.source_name
+        )
+        from (
+          select coalesce(source, '未填写') as source_name, count(*)::int as total
+          from public.customers
+          group by coalesce(source, '未填写')
+        ) as grouped
+      ),
+      '[]'::jsonb
+    ),
+    'funnelData',
+    coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object(
+            'status', grouped.status,
+            'value', grouped.total
+          )
+          order by grouped.total desc, grouped.status
+        )
+        from (
+          select status, count(*)::int as total
+          from public.customers
+          where status is not null
+          group by status
+        ) as grouped
+      ),
+      '[]'::jsonb
+    )
+  )
+  from public.customers;
+$$;
+
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -147,12 +203,35 @@ alter table public.daily_tasks enable row level security;
 alter table public.daily_stats enable row level security;
 
 drop policy if exists "authenticated users can manage customers" on public.customers;
-create policy "authenticated users can manage customers"
+drop policy if exists "users can view own customers" on public.customers;
+drop policy if exists "users can insert own customers" on public.customers;
+drop policy if exists "users can update own customers" on public.customers;
+drop policy if exists "users can delete own customers" on public.customers;
+
+create policy "users can view own customers"
 on public.customers
-for all
+for select
 to authenticated
-using (true)
-with check (true);
+using (created_by = auth.uid());
+
+create policy "users can insert own customers"
+on public.customers
+for insert
+to authenticated
+with check (created_by = auth.uid());
+
+create policy "users can update own customers"
+on public.customers
+for update
+to authenticated
+using (created_by = auth.uid())
+with check (created_by = auth.uid());
+
+create policy "users can delete own customers"
+on public.customers
+for delete
+to authenticated
+using (created_by = auth.uid());
 
 drop policy if exists "authenticated users can manage customer_logs" on public.customer_logs;
 drop policy if exists "users can view own customer_logs" on public.customer_logs;
@@ -184,6 +263,8 @@ on public.customer_logs
 for delete
 to authenticated
 using (created_by = auth.uid());
+
+grant execute on function public.get_team_customer_dashboard() to authenticated;
 
 drop policy if exists "authenticated users can manage fixed_tasks" on public.fixed_tasks;
 create policy "authenticated users can manage fixed_tasks"

@@ -51,6 +51,13 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
+type TeamCustomerSummary = {
+  totalCount: number;
+  dueCount: number;
+  gradeACount: number;
+  closedCount: number;
+};
+
 type FilterKey =
   | "all"
   | "due-today"
@@ -76,6 +83,7 @@ export function CustomersClient() {
   const searchParams = useSearchParams();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [logs, setLogs] = useState<CustomerLog[]>([]);
+  const [teamSummary, setTeamSummary] = useState<TeamCustomerSummary | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -137,9 +145,10 @@ export function CustomersClient() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    const [customersResult, logsResult] = await Promise.all([
+    const [customersResult, logsResult, summaryResult] = await Promise.all([
       customerQuery,
       user?.id ? logQuery.eq("created_by", user.id) : logQuery.limit(0),
+      supabase.rpc("get_team_customer_dashboard"),
     ]);
 
     if (!customersResult.error) {
@@ -148,6 +157,10 @@ export function CustomersClient() {
 
     if (!logsResult.error) {
       setLogs((logsResult.data ?? []) as CustomerLog[]);
+    }
+
+    if (!summaryResult.error && summaryResult.data) {
+      setTeamSummary(summaryResult.data as TeamCustomerSummary);
     }
 
     setLoading(false);
@@ -183,12 +196,12 @@ export function CustomersClient() {
     const closedCount = customers.filter((customer) => customer.status === "closed").length;
 
     return {
-      total: customers.length,
+      total: teamSummary?.totalCount ?? customers.length,
       dueCount,
       gradeACount,
       closedCount,
     };
-  }, [customers]);
+  }, [customers, teamSummary]);
 
   const sortedCustomers = useMemo(() => {
     const gradeOrder = { A: 0, B: 1, C: 2, null: 3 } as const;
@@ -434,10 +447,10 @@ export function CustomersClient() {
       <FollowupNotifier dueCount={dueTodayCustomers.length} />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="总客户数" value={stats.total} />
-        <StatCard title="今日需跟进" value={stats.dueCount} accent="rose" />
-        <StatCard title="A 类客户数" value={stats.gradeACount} accent="emerald" />
-        <StatCard title="已成交数" value={stats.closedCount} accent="indigo" />
+        <StatCard title="团队总客户数" value={stats.total} />
+        <StatCard title="我的今日需跟进" value={stats.dueCount} accent="rose" />
+        <StatCard title="我的 A 类客户数" value={stats.gradeACount} accent="emerald" />
+        <StatCard title="我的已成交数" value={stats.closedCount} accent="indigo" />
       </section>
 
       <section className="flex flex-wrap gap-2">

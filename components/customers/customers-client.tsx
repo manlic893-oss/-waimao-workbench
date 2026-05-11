@@ -127,9 +127,19 @@ export function CustomersClient() {
     }
 
     const supabase = createBrowserSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const customerQuery = supabase.from("customers").select("*").order("updated_at", { ascending: false });
+    const logQuery = supabase
+      .from("customer_logs")
+      .select("*")
+      .order("created_at", { ascending: false });
+
     const [customersResult, logsResult] = await Promise.all([
-      supabase.from("customers").select("*").order("updated_at", { ascending: false }),
-      supabase.from("customer_logs").select("*").order("created_at", { ascending: false }),
+      customerQuery,
+      user?.id ? logQuery.eq("created_by", user.id) : logQuery.limit(0),
     ]);
 
     if (!customersResult.error) {
@@ -651,7 +661,7 @@ export function CustomersClient() {
                 <div className="space-y-4">
                   <Card className="shadow-none">
                     <CardHeader>
-                      <CardTitle className="text-base">沟通记录</CardTitle>
+                      <CardTitle className="text-base">我的沟通记录</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {activeLogs.length > 0 ? (
@@ -662,7 +672,9 @@ export function CustomersClient() {
                           </div>
                         ))
                       ) : (
-                        <p className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">还没有沟通记录，先记下今天的跟进情况。</p>
+                        <p className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                          你当前账号还没有这位客户的沟通记录，先记下今天的跟进情况。
+                        </p>
                       )}
                     </CardContent>
                   </Card>
@@ -671,8 +683,11 @@ export function CustomersClient() {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-base">
                         <MessageSquarePlus className="h-4 w-4" />
-                        添加沟通记录
+                        添加我的沟通记录
                       </CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        客户池是两个人共用的，但这里的跟进记录只保存并显示你自己账号写的内容。
+                      </p>
                     </CardHeader>
                     <CardContent>
                       <form className="space-y-3" onSubmit={handleAddLog}>

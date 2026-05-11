@@ -155,12 +155,35 @@ using (true)
 with check (true);
 
 drop policy if exists "authenticated users can manage customer_logs" on public.customer_logs;
-create policy "authenticated users can manage customer_logs"
+drop policy if exists "users can view own customer_logs" on public.customer_logs;
+drop policy if exists "users can insert own customer_logs" on public.customer_logs;
+drop policy if exists "users can update own customer_logs" on public.customer_logs;
+drop policy if exists "users can delete own customer_logs" on public.customer_logs;
+
+create policy "users can view own customer_logs"
 on public.customer_logs
-for all
+for select
 to authenticated
-using (true)
-with check (true);
+using (created_by = auth.uid());
+
+create policy "users can insert own customer_logs"
+on public.customer_logs
+for insert
+to authenticated
+with check (created_by = auth.uid());
+
+create policy "users can update own customer_logs"
+on public.customer_logs
+for update
+to authenticated
+using (created_by = auth.uid())
+with check (created_by = auth.uid());
+
+create policy "users can delete own customer_logs"
+on public.customer_logs
+for delete
+to authenticated
+using (created_by = auth.uid());
 
 drop policy if exists "authenticated users can manage fixed_tasks" on public.fixed_tasks;
 create policy "authenticated users can manage fixed_tasks"

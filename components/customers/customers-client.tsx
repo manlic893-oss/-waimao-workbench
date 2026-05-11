@@ -481,12 +481,15 @@ export function CustomersClient() {
                       {customer.grade ? <Badge className={GRADE_STYLES[customer.grade]}>{customer.grade}类</Badge> : null}
                       {customer.status ? <Badge className={STATUS_STYLES[customer.status]}>{statusLabel}</Badge> : null}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {customer.country || "未填写国家"} · {customer.source || "未填写来源"}
-                    </p>
-                    <p className="max-w-2xl text-sm text-slate-600">{customer.product || "暂无产品需求描述"}</p>
-                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {customer.country || "未填写国家"} · {customer.source || "未填写来源"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    首次接触：{formatDate(customer.created_at, "yyyy年MM月dd日 HH:mm")}
+                  </p>
+                  <p className="max-w-2xl text-sm text-slate-600">{customer.product || "暂无产品需求描述"}</p>
                 </div>
+              </div>
 
                 <div className="flex flex-col items-start gap-3 lg:items-end">
                   {customer.next_follow_date ? (
@@ -615,6 +618,7 @@ export function CustomersClient() {
                     <InfoRow label="电话" value={selectedCustomer.phone} />
                     <InfoRow label="来源" value={selectedCustomer.source} />
                     <InfoRow label="评级" value={selectedCustomer.grade} />
+                    <InfoRow label="首次接触时间" value={formatDate(selectedCustomer.created_at, "yyyy年MM月dd日 HH:mm")} />
                     <InfoRow
                       label="状态"
                       value={CUSTOMER_STATUSES.find((item) => item.value === selectedCustomer.status)?.label}

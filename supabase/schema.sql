@@ -318,9 +318,48 @@ where not exists (
     and existing.title = seed.title
 );
 
-alter publication supabase_realtime add table public.customers;
-alter publication supabase_realtime add table public.customer_logs;
-alter publication supabase_realtime add table public.fixed_tasks;
-alter publication supabase_realtime add table public.daily_task_records;
-alter publication supabase_realtime add table public.daily_tasks;
-alter publication supabase_realtime add table public.daily_stats;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'customers'
+  ) then
+    alter publication supabase_realtime add table public.customers;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'customer_logs'
+  ) then
+    alter publication supabase_realtime add table public.customer_logs;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'fixed_tasks'
+  ) then
+    alter publication supabase_realtime add table public.fixed_tasks;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'daily_task_records'
+  ) then
+    alter publication supabase_realtime add table public.daily_task_records;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'daily_tasks'
+  ) then
+    alter publication supabase_realtime add table public.daily_tasks;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'daily_stats'
+  ) then
+    alter publication supabase_realtime add table public.daily_stats;
+  end if;
+end
+$$;

@@ -53,9 +53,6 @@ import { Textarea } from "@/components/ui/textarea";
 
 type TeamCustomerSummary = {
   totalCount: number;
-  dueCount: number;
-  gradeACount: number;
-  closedCount: number;
 };
 
 type FilterKey =
@@ -144,11 +141,12 @@ export function CustomersClient() {
       .from("customer_logs")
       .select("*")
       .order("created_at", { ascending: false });
+    const teamCountQuery = supabase.from("customers").select("*", { count: "exact", head: true });
 
     const [customersResult, logsResult, summaryResult] = await Promise.all([
-      customerQuery,
+      user?.id ? customerQuery.eq("created_by", user.id) : customerQuery.limit(0),
       user?.id ? logQuery.eq("created_by", user.id) : logQuery.limit(0),
-      supabase.rpc("get_team_customer_dashboard"),
+      teamCountQuery,
     ]);
 
     if (!customersResult.error) {
@@ -159,8 +157,10 @@ export function CustomersClient() {
       setLogs((logsResult.data ?? []) as CustomerLog[]);
     }
 
-    if (!summaryResult.error && summaryResult.data) {
-      setTeamSummary(summaryResult.data as TeamCustomerSummary);
+    if (!summaryResult.error) {
+      setTeamSummary({
+        totalCount: summaryResult.count ?? 0,
+      });
     }
 
     setLoading(false);

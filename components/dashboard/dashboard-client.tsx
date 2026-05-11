@@ -17,9 +17,6 @@ const pieColors = ["#3B5BDB", "#748FFC", "#A5B4FC", "#CBD5E1", "#8B5CF6", "#22C5
 
 type TeamCustomerDashboard = {
   totalCount: number;
-  dueCount: number;
-  gradeACount: number;
-  closedCount: number;
   sourceData: Array<{ name: string; value: number }>;
   funnelData: Array<{ status: string; value: number }>;
 };
@@ -40,22 +37,43 @@ export function DashboardClient() {
     const supabase = createBrowserSupabaseClient();
     const today = new Date();
     const thirtyDaysAgo = subDays(today, 29);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    const [customersResult, statsResult, tasksResult, dashboardResult] = await Promise.all([
-      supabase.from("customers").select("*"),
+    const [customersResult, teamCustomersResult, statsResult, tasksResult] = await Promise.all([
+      user?.id ? supabase.from("customers").select("*").eq("created_by", user.id) : supabase.from("customers").select("*").limit(0),
+      supabase.from("customers").select("source,status"),
       supabase
         .from("daily_stats")
         .select("*")
         .gte("date", toDateInputValue(thirtyDaysAgo))
         .order("date", { ascending: true }),
       supabase.from("daily_task_records").select("*").eq("date", toDateInputValue(today)),
-      supabase.rpc("get_team_customer_dashboard"),
     ]);
 
     if (!customersResult.error) setOwnCustomers(customersResult.data ?? []);
+    if (!teamCustomersResult.error) {
+      const teamCustomers = teamCustomersResult.data ?? [];
+      const sourceMap = new Map<string, number>();
+      const funnelMap = new Map<string, number>();
+
+      teamCustomers.forEach((customer) => {
+        const sourceKey = customer.source ?? "未填写";
+        sourceMap.set(sourceKey, (sourceMap.get(sourceKey) ?? 0) + 1);
+        if (customer.status) {
+          funnelMap.set(customer.status, (funnelMap.get(customer.status) ?? 0) + 1);
+        }
+      });
+
+      setTeamDashboard({
+        totalCount: teamCustomers.length,
+        sourceData: Array.from(sourceMap.entries()).map(([name, value]) => ({ name, value })),
+        funnelData: Array.from(funnelMap.entries()).map(([status, value]) => ({ status, value })),
+      });
+    }
     if (!statsResult.error) setStats(statsResult.data ?? []);
     if (!tasksResult.error) setTasks(tasksResult.data ?? []);
-    if (!dashboardResult.error && dashboardResult.data) setTeamDashboard(dashboardResult.data as TeamCustomerDashboard);
 
     setLoading(false);
   }, []);

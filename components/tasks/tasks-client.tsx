@@ -126,7 +126,7 @@ export function TasksClient() {
       );
     }
 
-    const [recordsResult, statsResult, customersResult] = await Promise.all([
+    const [recordsResult, statsByUserResult, customersResult] = await Promise.all([
       supabase
         .from("daily_task_records")
         .select("*")
@@ -134,13 +134,24 @@ export function TasksClient() {
         .or(`user_id.eq.${user.id},created_by.eq.${user.id}`)
         .eq("removed", false)
         .order("created_at", { ascending: true }),
-      supabase.from("daily_stats").select("*").eq("date", dateKey).or(`user_id.eq.${user.id},created_by.eq.${user.id}`).maybeSingle(),
+      supabase.from("daily_stats").select("*").eq("date", dateKey).eq("user_id", user.id).maybeSingle(),
       supabase
         .from("customers")
         .select("id,next_follow_date")
         .lte("next_follow_date", dateKey)
         .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`),
     ]);
+
+    let statsResult = statsByUserResult;
+    if (!statsByUserResult.data && !statsByUserResult.error) {
+      statsResult = await supabase
+        .from("daily_stats")
+        .select("*")
+        .eq("date", dateKey)
+        .is("user_id", null)
+        .eq("created_by", user.id)
+        .maybeSingle();
+    }
 
     if (!recordsResult.error) setTasks((recordsResult.data ?? []) as DailyTaskRecord[]);
     if (!customersResult.error) setDueCount(((customersResult.data ?? []) as Array<Pick<Customer, "id" | "next_follow_date">>).length);
@@ -355,7 +366,7 @@ export function TasksClient() {
         updated_by: user.id,
       })
       .eq("date", dateKey)
-      .or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
+      .eq("user_id", user.id);
 
     setDailySummary(summaryData);
     setSummaryOpen(true);

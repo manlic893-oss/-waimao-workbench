@@ -339,6 +339,7 @@ export type FixedTask = Database["public"]["Tables"]["fixed_tasks"]["Row"];
 export type DailyTaskRecord = Database["public"]["Tables"]["daily_task_records"]["Row"];
 export type DailyTask = Database["public"]["Tables"]["daily_tasks"]["Row"];
 export type DailyStat = Database["public"]["Tables"]["daily_stats"]["Row"];
+export type DailyReportHistoryItem = DailyStat;
 export type ProductKnowledge = Database["public"]["Tables"]["product_knowledge"]["Row"];
 export type AlibabaTitleGeneration = Database["public"]["Tables"]["alibaba_title_generations"]["Row"];
 export type KnowledgeArticle = Database["public"]["Tables"]["knowledge_articles"]["Row"];

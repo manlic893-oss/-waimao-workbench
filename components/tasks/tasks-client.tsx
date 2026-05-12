@@ -5,13 +5,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { addDays, getISODay } from "date-fns";
+import { addDays, getISODay, isValid, parseISO } from "date-fns";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { EnvNotice } from "@/components/shared/env-notice";
 import { FollowupNotifier } from "@/components/shared/followup-notifier";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,6 +28,8 @@ import { statsSchema, taskSchema, type StatsFormValues, type TaskFormValues } fr
 import type { Customer, DailyStat, DailyTaskRecord, FixedTask } from "@/types/database";
 
 export function TasksClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [date, setDate] = useState<Date>(new Date());
   const [tasks, setTasks] = useState<DailyTaskRecord[]>([]);
   const [fixedTasks, setFixedTasks] = useState<FixedTask[]>([]);
@@ -61,6 +64,23 @@ export function TasksClient() {
   });
 
   const dateKey = toDateInputValue(date);
+
+  useEffect(() => {
+    const dateParam = searchParams.get("date");
+    if (!dateParam) return;
+
+    const parsed = parseISO(dateParam);
+    if (!isValid(parsed)) return;
+
+    if (toDateInputValue(parsed) !== dateKey) {
+      setDate(parsed);
+    }
+  }, [dateKey, searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get("date") === dateKey) return;
+    router.replace(`/tasks?date=${dateKey}`, { scroll: false });
+  }, [dateKey, router, searchParams]);
 
   const seedFixedTasksIfNeeded = useCallback(async () => {
     const supabase = createBrowserSupabaseClient();
@@ -385,6 +405,11 @@ export function TasksClient() {
         <Badge>每日工作清单</Badge>
         <h1 className="text-3xl font-semibold">今日执行面板</h1>
         <p className="text-sm text-muted-foreground">固定任务按日期自动生成，日报按账号单独提交，历史日期可回看已保存内容。</p>
+        <div>
+          <Link className={buttonVariants({ variant: "outline", size: "sm" })} href="/tasks/reports">
+            查看历史日报
+          </Link>
+        </div>
       </section>
 
       <FollowupNotifier dueCount={dueCount} />

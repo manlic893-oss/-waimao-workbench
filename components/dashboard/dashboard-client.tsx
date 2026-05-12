@@ -42,19 +42,23 @@ export function DashboardClient() {
     } = await supabase.auth.getUser();
 
     const [customersResult, teamCustomersResult, statsResult, tasksResult] = await Promise.all([
-      user?.id ? supabase.from("customers").select("*").eq("created_by", user.id) : supabase.from("customers").select("*").limit(0),
+      user?.id
+        ? supabase
+            .from("customers")
+            .select("*")
+            .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
+        : supabase.from("customers").select("*").limit(0),
       supabase.from("customers").select("source,status"),
       supabase
         .from("daily_stats")
         .select("*")
         .gte("date", toDateInputValue(thirtyDaysAgo))
-        .eq("created_by", user?.id ?? "")
         .order("date", { ascending: true }),
       supabase
         .from("daily_task_records")
         .select("*")
         .eq("date", toDateInputValue(today))
-        .eq("created_by", user?.id ?? ""),
+        .or(user?.id ? `user_id.eq.${user.id},created_by.eq.${user.id}` : "id.is.null"),
     ]);
 
     if (!customersResult.error) setOwnCustomers(customersResult.data ?? []);
@@ -102,8 +106,46 @@ export function DashboardClient() {
   }, [loadDashboard]);
 
   const currentMonthStats = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        inquiry_count: number;
+        rfq_sent: number;
+        new_products: number;
+        orders_closed: number;
+        notes: string[];
+        ai_summary: string[];
+      }
+    >();
+
+    for (const item of stats) {
+      const entry = grouped.get(item.date) ?? {
+        inquiry_count: 0,
+        rfq_sent: 0,
+        new_products: 0,
+        orders_closed: 0,
+        notes: [],
+        ai_summary: [],
+      };
+
+      entry.inquiry_count += item.inquiry_count;
+      entry.rfq_sent += item.rfq_sent;
+      entry.new_products += item.new_products;
+      entry.orders_closed += item.orders_closed;
+      if (item.notes?.trim()) entry.notes.push(item.notes.trim());
+      if (item.ai_summary?.trim()) entry.ai_summary.push(item.ai_summary.trim());
+      grouped.set(item.date, entry);
+    }
+
+    const normalized = Array.from(grouped.entries()).map(([date, value]) => ({
+      date,
+      ...value,
+      notes: value.notes.join("\n"),
+      ai_summary: value.ai_summary.join("\n"),
+    }));
+
     const now = new Date();
-    return stats.filter((item) => {
+    return normalized.filter((item) => {
       const date = new Date(item.date);
       return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
     });
@@ -134,11 +176,11 @@ export function DashboardClient() {
 
   const inquiryTrend = useMemo(
     () =>
-      stats.map((item) => ({
+      currentMonthStats.map((item) => ({
         date: formatDate(item.date, "MM/dd"),
         count: item.inquiry_count,
       })),
-    [stats],
+    [currentMonthStats],
   );
 
   const funnelData = useMemo(
@@ -162,6 +204,7 @@ export function DashboardClient() {
   );
 
   const undoneTasks = tasks.filter((task) => !task.done).length;
+  const recentReports = currentMonthStats.slice(-5).reverse();
 
   if (!hasSupabaseEnv()) {
     return <EnvNotice />;
@@ -195,7 +238,7 @@ export function DashboardClient() {
         <Card>
           <CardHeader>
             <CardTitle>过去 30 天询盘趋势</CardTitle>
-            <CardDescription>以日报中的询盘数为准，观察波峰与回落区间。</CardDescription>
+            <CardDescription>按两个账号每天填报的日报数据合并统计。</CardDescription>
           </CardHeader>
           <CardContent className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -296,6 +339,35 @@ export function DashboardClient() {
           </CardContent>
         </Card>
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>历史日报备注</CardTitle>
+          <CardDescription>按日期展示最近几天汇总后的备注和 AI 总结。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {recentReports.length > 0 ? (
+            recentReports.map((report) => (
+              <div key={report.date} className="rounded-2xl border bg-white/60 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium">{formatDate(report.date, "yyyy年MM月dd日")}</p>
+                  <span className="text-xs text-muted-foreground">
+                    询盘 {report.inquiry_count} / RFQ {report.rfq_sent} / 新品 {report.new_products} / 成交 {report.orders_closed}
+                  </span>
+                </div>
+                <p className="mt-3 whitespace-pre-line text-sm text-slate-600">{report.notes || "当天没有填写备注。"}</p>
+                {report.ai_summary ? (
+                  <div className="mt-3 rounded-2xl bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+                    {report.ai_summary}
+                  </div>
+                ) : null}
+              </div>
+            ))
+          ) : (
+            <p className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">最近还没有日报记录。</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu } from "lucide-react";
+import { ChevronDown, Menu } from "lucide-react";
 import { useState } from "react";
 import { formatDate, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,11 @@ const navigation = [
   { href: "/tasks", label: "每日清单" },
 ];
 
+const knowledgeNavigation = [
+  { href: "/knowledge/products", label: "产品知识库" },
+  { href: "/knowledge/personal", label: "个人学习库" },
+];
+
 export function AppShell({
   children,
   userEmail,
@@ -23,6 +28,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
 
   return (
     <div className="min-h-screen">
@@ -51,6 +57,38 @@ export function AppShell({
                 {item.label}
               </Link>
             ))}
+            <div className="relative">
+              <button
+                type="button"
+                className={cn(
+                  "flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                  pathname.startsWith("/knowledge")
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+                onClick={() => setKnowledgeOpen((value) => !value)}
+              >
+                知识库
+                <ChevronDown className="h-4 w-4" />
+              </button>
+              {knowledgeOpen ? (
+                <div className="absolute right-0 top-12 w-44 rounded-2xl border bg-white p-2 shadow-xl">
+                  {knowledgeNavigation.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "block rounded-xl px-3 py-2 text-sm",
+                        pathname === item.href ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary",
+                      )}
+                      onClick={() => setKnowledgeOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
@@ -71,6 +109,19 @@ export function AppShell({
             <div className="container space-y-3 py-4">
               <div className="space-y-2">
                 {navigation.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "block rounded-2xl px-4 py-3 text-sm font-medium",
+                      pathname === item.href ? "bg-primary text-primary-foreground" : "bg-secondary/70 text-foreground",
+                    )}
+                    onClick={() => setOpen(false)}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+                {knowledgeNavigation.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}

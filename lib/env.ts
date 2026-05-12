@@ -12,3 +12,7 @@ export function getSupabaseEnv() {
 export function hasSupabaseEnv() {
   return Boolean(getSupabaseEnv());
 }
+
+export function getAnthropicApiKey() {
+  return process.env.ANTHROPIC_API_KEY ?? null;
+}

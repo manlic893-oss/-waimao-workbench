@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -37,6 +38,8 @@ export function TasksClient() {
   const [statsNotice, setStatsNotice] = useState<string>("");
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [dailySummary, setDailySummary] = useState<{ summary: string; encouragement: string } | null>(null);
 
   const taskForm = useForm<TaskFormValues>({
     resolver: zodResolver(taskSchema),
@@ -102,7 +105,7 @@ export function TasksClient() {
       .from("daily_task_records")
       .select("*")
       .eq("date", dateKey)
-      .eq("created_by", user.id);
+      .or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
     const existingRecords = (existingRecordsResult.data ?? []) as DailyTaskRecord[];
     const existingFixedTaskIds = new Set(existingRecords.map((record) => record.fixed_task_id).filter(Boolean));
 
@@ -111,6 +114,7 @@ export function TasksClient() {
       await supabase.from("daily_task_records").insert(
         missingRecords.map((task) => ({
           date: dateKey,
+          user_id: user.id,
           fixed_task_id: task.id,
           title: task.title,
           category: task.task_category,
@@ -126,10 +130,14 @@ export function TasksClient() {
         .from("daily_task_records")
         .select("*")
         .eq("date", dateKey)
-        .eq("created_by", user.id)
+        .or(`user_id.eq.${user.id},created_by.eq.${user.id}`)
         .order("created_at", { ascending: true }),
-      supabase.from("daily_stats").select("*").eq("date", dateKey).eq("created_by", user.id).maybeSingle(),
-      supabase.from("customers").select("id,next_follow_date").lte("next_follow_date", dateKey),
+      supabase.from("daily_stats").select("*").eq("date", dateKey).or(`user_id.eq.${user.id},created_by.eq.${user.id}`).maybeSingle(),
+      supabase
+        .from("customers")
+        .select("id,next_follow_date")
+        .lte("next_follow_date", dateKey)
+        .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`),
     ]);
 
     if (!recordsResult.error) setTasks((recordsResult.data ?? []) as DailyTaskRecord[]);
@@ -167,8 +175,6 @@ export function TasksClient() {
   }, [dateKey, hydrateForDate]);
 
   const completedCount = tasks.filter((task) => task.done).length;
-  const customTaskCount = tasks.filter((task) => !task.fixed_task_id).length;
-  const pendingCount = tasks.length - completedCount;
   const progressValue = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
 
   const fixedTaskMap = useMemo(() => new Map(fixedTasks.map((task) => [task.id, task])), [fixedTasks]);
@@ -227,6 +233,7 @@ export function TasksClient() {
 
     const { error } = await supabase.from("daily_task_records").insert({
       date: dateKey,
+      user_id: user.id,
       title: values.title,
       category: values.category,
       fixed_task_id: null,
@@ -252,7 +259,7 @@ export function TasksClient() {
       .from("daily_task_records")
       .update({ done: !task.done, updated_by: user?.id ?? null })
       .eq("id", task.id)
-      .eq("created_by", user.id);
+      .or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
     setTaskNotice(!task.done ? "任务已标记为完成。" : "任务已重新改为未完成。");
   };
 
@@ -262,7 +269,7 @@ export function TasksClient() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user?.id) return;
-    await supabase.from("daily_task_records").delete().eq("id", taskId).eq("created_by", user.id);
+    await supabase.from("daily_task_records").delete().eq("id", taskId).or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
     setTaskNotice("自定义任务已删除。");
   };
 
@@ -281,7 +288,7 @@ export function TasksClient() {
     if (!user?.id) return;
     await Promise.all([
       supabase.from("fixed_tasks").update({ title: editingTitle }).eq("id", task.fixed_task_id),
-      supabase.from("daily_task_records").update({ title: editingTitle }).eq("id", task.id).eq("created_by", user.id),
+      supabase.from("daily_task_records").update({ title: editingTitle }).eq("id", task.id).or(`user_id.eq.${user.id},created_by.eq.${user.id}`),
     ]);
     setEditingRecordId(null);
     setEditingTitle("");
@@ -299,22 +306,49 @@ export function TasksClient() {
       return;
     }
 
-    await supabase.from("daily_stats").upsert(
-      {
+    const savePayload = {
         id: stat?.id,
         date: dateKey,
-        inquiry_count: values.inquiry_count,
-        rfq_sent: values.rfq_sent,
-        new_products: values.new_products,
-        orders_closed: values.orders_closed,
-        notes: values.notes || null,
-        created_by: stat?.created_by ?? user.id,
-        updated_by: user.id,
+        user_id: user.id,
+      inquiry_count: values.inquiry_count,
+      rfq_sent: values.rfq_sent,
+      new_products: values.new_products,
+      orders_closed: values.orders_closed,
+      notes: values.notes || null,
+      ai_summary: stat?.ai_summary ?? null,
+      submitted_at: new Date().toISOString(),
+      created_by: stat?.created_by ?? user.id,
+      updated_by: user.id,
+    };
+
+    await supabase.from("daily_stats").upsert(
+      {
+        ...savePayload,
       },
-      { onConflict: "date,created_by" },
+      { onConflict: "date,user_id" },
     );
 
-    setStatsNotice("今日数据和每日总结已保存，可以随时回来修改。");
+    const summaryResponse = await fetch("/api/daily-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
+    const summaryData = (await summaryResponse.json()) as { summary: string; encouragement: string };
+
+    await supabase
+      .from("daily_stats")
+      .update({
+        ai_summary: `${summaryData.summary}\n${summaryData.encouragement}`,
+        submitted_at: new Date().toISOString(),
+        updated_by: user.id,
+      })
+      .eq("date", dateKey)
+      .or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
+
+    setDailySummary(summaryData);
+    setSummaryOpen(true);
+    setStatsNotice("今日日报已提交，可以继续回来修改。");
+    await hydrateForDate();
     setSavingStats(false);
   });
 
@@ -327,51 +361,45 @@ export function TasksClient() {
       <section className="space-y-2">
         <Badge>每日工作清单</Badge>
         <h1 className="text-3xl font-semibold">今日执行面板</h1>
-        <p className="text-sm text-muted-foreground">固定任务按日期自动生成，周任务会在对应星期自动出现，历史完成状态保留不重置。</p>
+        <p className="text-sm text-muted-foreground">固定任务按日期自动生成，日报按账号单独提交，历史日期可回看已保存内容。</p>
       </section>
-
-      {dueCount > 0 ? (
-        <div className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-          今日有 <span className="font-semibold">{dueCount}</span> 位客户需要跟进，
-          <Link className="ml-1 font-semibold underline underline-offset-4" href="/customers?filter=due-today">
-            点击直达客户管理
-          </Link>
-          。
-        </div>
-      ) : null}
 
       <FollowupNotifier dueCount={dueCount} />
 
-      <section className="flex flex-col gap-4 rounded-[1.75rem] border bg-white/90 p-5 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
+      <section className="grid gap-4 rounded-[1.75rem] border bg-white/90 p-5 lg:grid-cols-[1fr_1.2fr_auto] lg:items-center">
+        <div className="space-y-1">
+          <p className="text-2xl font-semibold">
+            {formatDate(date, "yyyy年MM月dd日")} {formatDate(date, "EEEE")}
+          </p>
+          {dueCount > 0 ? (
+            <p className="text-sm text-rose-700">
+              今日有 {dueCount} 位客户需要跟进，
+              <Link className="font-medium underline underline-offset-4" href="/customers?filter=due-today">
+                点击查看
+              </Link>
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">今天暂时没有新的跟进提醒。</p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span>已完成 {completedCount} / {tasks.length} 项</span>
+            <span className="text-muted-foreground">{progressValue}%</span>
+          </div>
+          <Progress value={progressValue} />
+        </div>
+        <div className="flex items-center justify-end gap-3">
           <Button variant="outline" size="icon" onClick={() => setDate((current) => addDays(current, -1))}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <p className="text-sm text-muted-foreground">当前查看日期</p>
-            <p className="text-xl font-semibold">{formatDate(date, "yyyy年MM月dd日")}</p>
+            <p className="text-center text-xs text-muted-foreground">切换日期</p>
           </div>
           <Button variant="outline" size="icon" onClick={() => setDate((current) => addDays(current, 1))}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-
-        <div className="w-full max-w-md space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span>完成进度</span>
-            <span className="font-medium">
-              已完成 {completedCount} / 总计 {tasks.length} 项（{progressValue}%）
-            </span>
-          </div>
-          <Progress value={progressValue} />
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MiniStatCard title="我的任务总数" value={`${tasks.length} 项`} />
-        <MiniStatCard title="已完成任务" value={`${completedCount} 项`} />
-        <MiniStatCard title="待完成任务" value={`${pendingCount} 项`} />
-        <MiniStatCard title="自定义任务" value={`${customTaskCount} 项`} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
@@ -379,7 +407,7 @@ export function TasksClient() {
           <Card>
             <CardHeader>
               <CardTitle>任务列表</CardTitle>
-              <p className="text-sm text-muted-foreground">固定任务自动生成，自定义任务可以随时新增或删除。</p>
+              <p className="text-sm text-muted-foreground">固定任务和本周任务分组展示，双击标题可直接改内容。</p>
             </CardHeader>
             <CardContent className="space-y-5">
               {taskNotice ? <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{taskNotice}</div> : null}
@@ -452,8 +480,8 @@ export function TasksClient() {
 
           <Card>
             <CardHeader>
-              <CardTitle>增减今日任务项目</CardTitle>
-              <p className="text-sm text-muted-foreground">这里添加的是你今天临时增加的任务项目，自定义任务可以单独删除。</p>
+              <CardTitle>+ 添加今日临时任务</CardTitle>
+              <p className="text-sm text-muted-foreground">只影响你自己的当天任务列表，后面可以删除。</p>
             </CardHeader>
             <CardContent>
               <form className="grid gap-4 md:grid-cols-[1fr_180px_auto]" onSubmit={handleCreateTask}>
@@ -480,7 +508,7 @@ export function TasksClient() {
         <Card>
           <CardHeader>
             <CardTitle>每日数据填报</CardTitle>
-            <p className="text-sm text-muted-foreground">以下数据按当前账号单独保存，之后打开同一天仍然可以继续修改。</p>
+            <p className="text-sm text-muted-foreground">以下日报按当前账号单独保存，提交后会自动生成 AI 总结和小激励。</p>
           </CardHeader>
           <CardContent className="space-y-4">
             {statsNotice ? <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{statsNotice}</div> : null}
@@ -494,19 +522,53 @@ export function TasksClient() {
               <div>
                 <Label className="mb-2 block">每日总结</Label>
                 <Textarea
-                  placeholder="总结今天做了什么、效果如何、遇到了什么问题、明天准备跟进什么。"
+                  placeholder="记录今天的重点动作、收获、问题和明天准备跟进什么。"
                   rows={6}
                   {...statsForm.register("notes")}
                 />
               </div>
+              {stat?.ai_summary ? (
+                <div className="rounded-2xl bg-indigo-50 px-4 py-3">
+                  <p className="text-sm font-medium text-indigo-800">已保存的 AI 总结</p>
+                  <p className="mt-2 whitespace-pre-line text-sm text-indigo-700">{stat.ai_summary}</p>
+                </div>
+              ) : null}
               <Button type="submit" disabled={savingStats}>
                 {savingStats ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                保存今日数据与总结
+                提交今日日报
               </Button>
             </form>
           </CardContent>
         </Card>
       </section>
+
+      <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>今日日报已生成</DialogTitle>
+            <DialogDescription>下面是根据今天的数字和备注自动生成的总结与鼓励。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-2xl border bg-white/70 p-4 text-sm leading-6">
+              <p>今日询盘数：{statsForm.getValues("inquiry_count")}</p>
+              <p>RFQ 报价发送数：{statsForm.getValues("rfq_sent")}</p>
+              <p>新发品数：{statsForm.getValues("new_products")}</p>
+              <p>成交订单数：{statsForm.getValues("orders_closed")}</p>
+            </div>
+            <div className="rounded-2xl bg-secondary/60 p-4">
+              <p className="text-sm font-medium">AI 总结</p>
+              <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{dailySummary?.summary}</p>
+            </div>
+            <div className="rounded-2xl bg-indigo-50 p-4">
+              <p className="text-sm font-medium text-indigo-800">今日小激励</p>
+              <p className="mt-2 whitespace-pre-line text-sm text-indigo-700">{dailySummary?.encouragement}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setSummaryOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -523,16 +585,5 @@ function NumericField({
       <Label className="mb-2 block">{label}</Label>
       <Input type="number" min={0} {...inputProps} />
     </div>
-  );
-}
-
-function MiniStatCard({ title, value }: { title: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="space-y-2 p-5">
-        <p className="text-sm text-muted-foreground">{title}</p>
-        <p className="text-2xl font-semibold">{value}</p>
-      </CardContent>
-    </Card>
   );
 }

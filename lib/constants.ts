@@ -1,4 +1,4 @@
-import type { CustomerGrade, CustomerSource, CustomerStatus, TaskCategory } from "@/types/database";
+import type { CustomerGrade, CustomerSource, CustomerStatus, KnowledgeArticleCategory, TaskCategory } from "@/types/database";
 
 export const CUSTOMER_SOURCES: CustomerSource[] = [
   "阿里国际站",
@@ -38,6 +38,13 @@ export const TASK_CATEGORIES: Array<{ value: TaskCategory; label: string }> = [
   { value: "relationship", label: "客情" },
   { value: "data", label: "数据" },
   { value: "development", label: "开发" },
+  { value: "other", label: "其他" },
+];
+
+export const KNOWLEDGE_ARTICLE_CATEGORIES: Array<{ value: KnowledgeArticleCategory; label: string }> = [
+  { value: "sales_skills", label: "销售技巧" },
+  { value: "trade_knowledge", label: "外贸知识" },
+  { value: "tools", label: "工具推荐" },
   { value: "other", label: "其他" },
 ];
 

@@ -29,6 +29,7 @@ export type CustomerStatus =
   | "lost";
 export type TaskCategory = "inquiry" | "rfq" | "product" | "other" | "relationship" | "data" | "development";
 export type FixedTaskCategory = "daily" | "weekly";
+export type KnowledgeArticleCategory = "sales_skills" | "trade_knowledge" | "tools" | "other";
 
 export interface Database {
   public: {
@@ -47,6 +48,7 @@ export interface Database {
           email: string | null;
           product: string | null;
           next_follow_date: string | null;
+          assigned_to: string | null;
           notes: string | null;
           created_at: string;
           updated_at: string;
@@ -66,6 +68,7 @@ export interface Database {
           email?: string | null;
           product?: string | null;
           next_follow_date?: string | null;
+          assigned_to?: string | null;
           notes?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -78,6 +81,7 @@ export interface Database {
         Row: {
           id: string;
           customer_id: string;
+          user_id: string | null;
           content: string;
           created_at: string;
           created_by: string | null;
@@ -85,6 +89,7 @@ export interface Database {
         Insert: {
           id?: string;
           customer_id: string;
+          user_id?: string | null;
           content: string;
           created_at?: string;
           created_by?: string | null;
@@ -119,6 +124,7 @@ export interface Database {
       daily_task_records: {
         Row: {
           id: string;
+          user_id: string | null;
           date: string;
           fixed_task_id: string | null;
           title: string;
@@ -131,6 +137,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          user_id?: string | null;
           date: string;
           fixed_task_id?: string | null;
           title: string;
@@ -173,29 +180,93 @@ export interface Database {
       daily_stats: {
         Row: {
           id: string;
+          user_id: string | null;
           date: string;
           inquiry_count: number;
           rfq_sent: number;
           new_products: number;
           orders_closed: number;
           notes: string | null;
+          ai_summary: string | null;
+          submitted_at: string | null;
           created_at: string;
           created_by: string | null;
           updated_by: string | null;
         };
         Insert: {
           id?: string;
+          user_id?: string | null;
           date: string;
           inquiry_count?: number;
           rfq_sent?: number;
           new_products?: number;
           orders_closed?: number;
           notes?: string | null;
+          ai_summary?: string | null;
+          submitted_at?: string | null;
           created_at?: string;
           created_by?: string | null;
           updated_by?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["daily_stats"]["Insert"]>;
+      };
+      product_knowledge: {
+        Row: {
+          id: string;
+          product_name: string;
+          category: string | null;
+          specs: string | null;
+          price_range: string | null;
+          moq: string | null;
+          material: string | null;
+          lead_time: string | null;
+          notes: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_name: string;
+          category?: string | null;
+          specs?: string | null;
+          price_range?: string | null;
+          moq?: string | null;
+          material?: string | null;
+          lead_time?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_knowledge"]["Insert"]>;
+      };
+      knowledge_articles: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          title: string;
+          url: string | null;
+          content: string | null;
+          summary: string | null;
+          tags: string[] | null;
+          category: KnowledgeArticleCategory | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          title: string;
+          url?: string | null;
+          content?: string | null;
+          summary?: string | null;
+          tags?: string[] | null;
+          category?: KnowledgeArticleCategory | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["knowledge_articles"]["Insert"]>;
       };
     };
     Views: Record<string, never>;
@@ -211,3 +282,5 @@ export type FixedTask = Database["public"]["Tables"]["fixed_tasks"]["Row"];
 export type DailyTaskRecord = Database["public"]["Tables"]["daily_task_records"]["Row"];
 export type DailyTask = Database["public"]["Tables"]["daily_tasks"]["Row"];
 export type DailyStat = Database["public"]["Tables"]["daily_stats"]["Row"];
+export type ProductKnowledge = Database["public"]["Tables"]["product_knowledge"]["Row"];
+export type KnowledgeArticle = Database["public"]["Tables"]["knowledge_articles"]["Row"];

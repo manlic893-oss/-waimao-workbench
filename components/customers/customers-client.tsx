@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Copy, Loader2, MessageSquarePlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import {
   CUSTOMER_GRADES,
@@ -144,8 +145,8 @@ export function CustomersClient() {
     const teamCountQuery = supabase.from("customers").select("*", { count: "exact", head: true });
 
     const [customersResult, logsResult, summaryResult] = await Promise.all([
-      user?.id ? customerQuery.eq("created_by", user.id) : customerQuery.limit(0),
-      user?.id ? logQuery.eq("created_by", user.id) : logQuery.limit(0),
+      user?.id ? customerQuery.or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`) : customerQuery.limit(0),
+      user?.id ? logQuery.or(`user_id.eq.${user.id},created_by.eq.${user.id}`) : logQuery.limit(0),
       teamCountQuery,
     ]);
 
@@ -297,6 +298,7 @@ export function CustomersClient() {
         const { error } = await supabase.from("customers").insert({
           ...payload,
           next_follow_date: payload.next_follow_date || getTomorrowDateValue(),
+          assigned_to: user?.id ?? null,
           created_by: user?.id ?? null,
         });
         if (error) throw error;
@@ -328,6 +330,7 @@ export function CustomersClient() {
           status: "pending_quote",
           product: values.product || null,
           next_follow_date: getTomorrowDateValue(),
+          assigned_to: user?.id ?? null,
           created_by: user?.id ?? null,
           updated_by: user?.id ?? null,
         })
@@ -341,6 +344,7 @@ export function CustomersClient() {
       if (values.initialLog?.trim()) {
         await supabase.from("customer_logs").insert({
           customer_id: insertedCustomer.id,
+          user_id: user?.id ?? null,
           content: values.initialLog.trim(),
           created_by: user?.id ?? null,
         });
@@ -383,6 +387,7 @@ export function CustomersClient() {
 
     const { error } = await supabase.from("customer_logs").insert({
       customer_id: selectedCustomer.id,
+      user_id: user?.id ?? null,
       content: values.content,
       created_by: user?.id ?? null,
     });
@@ -510,7 +515,12 @@ export function CustomersClient() {
                   <p className="text-xs text-muted-foreground">
                     首次接触：{formatDate(customer.created_at, "yyyy年MM月dd日 HH:mm")}
                   </p>
-                  <p className="max-w-2xl text-sm text-slate-600">{customer.product || "暂无产品需求描述"}</p>
+                  <p className="max-w-2xl truncate text-sm text-slate-600" title={customer.product || "暂无产品需求描述"}>
+                    {customer.product || "暂无产品需求描述"}
+                  </p>
+                  <p className="max-w-2xl truncate text-xs text-muted-foreground" title={customer.notes || "暂无备注"}>
+                    备注：{customer.notes || "暂无备注"}
+                  </p>
                 </div>
               </div>
 
@@ -649,7 +659,15 @@ export function CustomersClient() {
                     <InfoRow label="WhatsApp" value={selectedCustomer.whatsapp} />
                     <InfoRow label="邮箱" value={selectedCustomer.email} />
                     <InfoRow label="下次跟进日期" value={selectedCustomer.next_follow_date ? formatDate(selectedCustomer.next_follow_date) : null} />
-                    <InfoRow label="产品需求" value={selectedCustomer.product} />
+                    <div className="space-y-2">
+                      <InfoRow label="产品需求" value={selectedCustomer.product} />
+                      <Link
+                        className="inline-flex rounded-full bg-secondary px-3 py-1 text-xs text-foreground"
+                        href={`/knowledge/products?keyword=${encodeURIComponent(selectedCustomer.product || "")}`}
+                      >
+                        查询知识库
+                      </Link>
+                    </div>
                     <InfoRow label="备注" value={selectedCustomer.notes} />
 
                     <div className="flex gap-2 pt-2">

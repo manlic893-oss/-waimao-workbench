@@ -48,7 +48,7 @@ export function DashboardClient() {
             .select("*")
             .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
         : supabase.from("customers").select("*").limit(0),
-      supabase.from("customers").select("source,status"),
+      supabase.rpc("get_customer_dashboard_aggregate"),
       supabase
         .from("daily_stats")
         .select("*")
@@ -62,24 +62,8 @@ export function DashboardClient() {
     ]);
 
     if (!customersResult.error) setOwnCustomers(customersResult.data ?? []);
-    if (!teamCustomersResult.error) {
-      const teamCustomers = teamCustomersResult.data ?? [];
-      const sourceMap = new Map<string, number>();
-      const funnelMap = new Map<string, number>();
-
-      teamCustomers.forEach((customer) => {
-        const sourceKey = customer.source ?? "未填写";
-        sourceMap.set(sourceKey, (sourceMap.get(sourceKey) ?? 0) + 1);
-        if (customer.status) {
-          funnelMap.set(customer.status, (funnelMap.get(customer.status) ?? 0) + 1);
-        }
-      });
-
-      setTeamDashboard({
-        totalCount: teamCustomers.length,
-        sourceData: Array.from(sourceMap.entries()).map(([name, value]) => ({ name, value })),
-        funnelData: Array.from(funnelMap.entries()).map(([status, value]) => ({ status, value })),
-      });
+    if (!teamCustomersResult.error && teamCustomersResult.data) {
+      setTeamDashboard(teamCustomersResult.data as TeamCustomerDashboard);
     }
     if (!statsResult.error) setStats(statsResult.data ?? []);
     if (!tasksResult.error) setTasks(tasksResult.data ?? []);

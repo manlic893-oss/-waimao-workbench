@@ -10,6 +10,41 @@ begin
 end;
 $$;
 
+create or replace function public.get_customer_dashboard_aggregate()
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  result jsonb;
+begin
+  select jsonb_build_object(
+    'totalCount', count(*)::int,
+    'sourceData', coalesce((
+      select jsonb_agg(jsonb_build_object('name', source_name, 'value', total) order by total desc, source_name)
+      from (
+        select coalesce(source, '未填写') as source_name, count(*)::int as total
+        from public.customers
+        group by coalesce(source, '未填写')
+      ) grouped_source
+    ), '[]'::jsonb),
+    'funnelData', coalesce((
+      select jsonb_agg(jsonb_build_object('status', status_name, 'value', total) order by total desc, status_name)
+      from (
+        select status as status_name, count(*)::int as total
+        from public.customers
+        where status is not null
+        group by status
+      ) grouped_status
+    ), '[]'::jsonb)
+  )
+  into result
+  from public.customers;
+
+  return result;
+end;
+$$;
+
 create or replace function public.get_team_customer_dashboard()
 returns jsonb
 language sql
@@ -449,6 +484,8 @@ on public.knowledge_articles
 for delete
 to authenticated
 using (user_id = auth.uid());
+
+grant execute on function public.get_customer_dashboard_aggregate() to authenticated;
 
 insert into public.fixed_tasks (category, weekday, title, task_category, sort_order, is_active)
 select seed.category, seed.weekday, seed.title, seed.task_category, seed.sort_order, true

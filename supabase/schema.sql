@@ -168,6 +168,7 @@ create table if not exists public.daily_task_records (
   title text not null,
   category text not null check (category in ('inquiry', 'rfq', 'product', 'other', 'relationship', 'data', 'development')),
   done boolean not null default false,
+  removed boolean not null default false,
   created_at timestamptz not null default timezone('utc'::text, now()),
   updated_at timestamptz not null default timezone('utc'::text, now()),
   created_by uuid references auth.users(id) on delete set null,
@@ -219,6 +220,33 @@ create table if not exists public.product_knowledge (
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
 
+create table if not exists public.alibaba_title_generations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  image_path text not null,
+  sku text,
+  confirmed_material text,
+  confirmed_size text,
+  confirmed_usage text,
+  reference_text text,
+  forbidden_words text[] not null default '{}',
+  product_identification text,
+  possible_material text,
+  shape_or_style text,
+  recommended_keywords text[] not null default '{}',
+  keywords_to_avoid text[] not null default '{}',
+  titles jsonb not null default '[]'::jsonb,
+  recommended_title text,
+  reason text,
+  risk_check text[] not null default '{}',
+  confirmed_title text,
+  status text not null default 'generated' check (status in ('generated', 'confirmed')),
+  created_by uuid references auth.users(id) on delete set null,
+  updated_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  updated_at timestamptz not null default timezone('utc'::text, now())
+);
+
 create table if not exists public.knowledge_articles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete cascade,
@@ -243,6 +271,8 @@ create index if not exists idx_daily_task_records_user_date on public.daily_task
 create index if not exists idx_daily_stats_user_date on public.daily_stats(user_id, date);
 create index if not exists idx_knowledge_articles_user_id on public.knowledge_articles(user_id);
 create index if not exists idx_product_knowledge_category on public.product_knowledge(category);
+create index if not exists idx_alibaba_title_generations_user_id on public.alibaba_title_generations(user_id);
+create index if not exists idx_alibaba_title_generations_created_at on public.alibaba_title_generations(created_at desc);
 create unique index if not exists idx_daily_task_records_owner_unique
 on public.daily_task_records(date, created_by, fixed_task_id)
 where fixed_task_id is not null and created_by is not null;
@@ -261,6 +291,7 @@ alter table public.customers add column if not exists phone text;
 alter table public.customers add column if not exists assigned_to uuid references auth.users(id) on delete set null;
 alter table public.customer_logs add column if not exists user_id uuid references auth.users(id) on delete set null;
 alter table public.daily_task_records add column if not exists user_id uuid references auth.users(id) on delete set null;
+alter table public.daily_task_records add column if not exists removed boolean not null default false;
 alter table public.daily_stats add column if not exists user_id uuid references auth.users(id) on delete set null;
 alter table public.daily_stats add column if not exists ai_summary text;
 alter table public.daily_stats add column if not exists submitted_at timestamptz;
@@ -288,6 +319,12 @@ before update on public.product_knowledge
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists set_alibaba_title_generations_updated_at on public.alibaba_title_generations;
+create trigger set_alibaba_title_generations_updated_at
+before update on public.alibaba_title_generations
+for each row
+execute function public.set_updated_at();
+
 drop trigger if exists set_daily_task_records_updated_at on public.daily_task_records;
 create trigger set_daily_task_records_updated_at
 before update on public.daily_task_records
@@ -301,6 +338,7 @@ alter table public.daily_task_records enable row level security;
 alter table public.daily_tasks enable row level security;
 alter table public.daily_stats enable row level security;
 alter table public.product_knowledge enable row level security;
+alter table public.alibaba_title_generations enable row level security;
 alter table public.knowledge_articles enable row level security;
 
 drop policy if exists "authenticated users can manage customers" on public.customers;
@@ -454,6 +492,36 @@ to authenticated
 using (true)
 with check (true);
 
+drop policy if exists "users can view own alibaba_title_generations" on public.alibaba_title_generations;
+drop policy if exists "users can insert own alibaba_title_generations" on public.alibaba_title_generations;
+drop policy if exists "users can update own alibaba_title_generations" on public.alibaba_title_generations;
+drop policy if exists "users can delete own alibaba_title_generations" on public.alibaba_title_generations;
+
+create policy "users can view own alibaba_title_generations"
+on public.alibaba_title_generations
+for select
+to authenticated
+using (user_id = auth.uid() or created_by = auth.uid());
+
+create policy "users can insert own alibaba_title_generations"
+on public.alibaba_title_generations
+for insert
+to authenticated
+with check (user_id = auth.uid() or created_by = auth.uid());
+
+create policy "users can update own alibaba_title_generations"
+on public.alibaba_title_generations
+for update
+to authenticated
+using (user_id = auth.uid() or created_by = auth.uid())
+with check (user_id = auth.uid() or created_by = auth.uid());
+
+create policy "users can delete own alibaba_title_generations"
+on public.alibaba_title_generations
+for delete
+to authenticated
+using (user_id = auth.uid() or created_by = auth.uid());
+
 drop policy if exists "authenticated users can manage knowledge_articles" on public.knowledge_articles;
 drop policy if exists "users can view own knowledge_articles" on public.knowledge_articles;
 drop policy if exists "users can insert own knowledge_articles" on public.knowledge_articles;
@@ -486,6 +554,50 @@ to authenticated
 using (user_id = auth.uid());
 
 grant execute on function public.get_customer_dashboard_aggregate() to authenticated;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'product-title-images',
+  'product-title-images',
+  false,
+  8388608,
+  array['image/png', 'image/jpeg', 'image/webp']
+)
+on conflict (id) do update
+set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "users can view own product title images" on storage.objects;
+drop policy if exists "users can upload own product title images" on storage.objects;
+drop policy if exists "users can update own product title images" on storage.objects;
+drop policy if exists "users can delete own product title images" on storage.objects;
+
+create policy "users can view own product title images"
+on storage.objects
+for select
+to authenticated
+using (bucket_id = 'product-title-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "users can upload own product title images"
+on storage.objects
+for insert
+to authenticated
+with check (bucket_id = 'product-title-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "users can update own product title images"
+on storage.objects
+for update
+to authenticated
+using (bucket_id = 'product-title-images' and (storage.foldername(name))[1] = auth.uid()::text)
+with check (bucket_id = 'product-title-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "users can delete own product title images"
+on storage.objects
+for delete
+to authenticated
+using (bucket_id = 'product-title-images' and (storage.foldername(name))[1] = auth.uid()::text);
 
 insert into public.fixed_tasks (category, weekday, title, task_category, sort_order, is_active)
 select seed.category, seed.weekday, seed.title, seed.task_category, seed.sort_order, true
@@ -556,6 +668,13 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'product_knowledge'
   ) then
     alter publication supabase_realtime add table public.product_knowledge;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'alibaba_title_generations'
+  ) then
+    alter publication supabase_realtime add table public.alibaba_title_generations;
   end if;
 
   if not exists (

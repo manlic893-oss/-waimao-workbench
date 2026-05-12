@@ -16,3 +16,7 @@ export function hasSupabaseEnv() {
 export function getAnthropicApiKey() {
   return process.env.ANTHROPIC_API_KEY ?? null;
 }
+
+export function getOpenAIApiKey() {
+  return process.env.OPENAI_API_KEY ?? null;
+}

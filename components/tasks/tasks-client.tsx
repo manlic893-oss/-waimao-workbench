@@ -119,6 +119,7 @@ export function TasksClient() {
           title: task.title,
           category: task.task_category,
           done: false,
+          removed: false,
           created_by: user?.id ?? null,
           updated_by: user?.id ?? null,
         })),
@@ -131,6 +132,7 @@ export function TasksClient() {
         .select("*")
         .eq("date", dateKey)
         .or(`user_id.eq.${user.id},created_by.eq.${user.id}`)
+        .eq("removed", false)
         .order("created_at", { ascending: true }),
       supabase.from("daily_stats").select("*").eq("date", dateKey).or(`user_id.eq.${user.id},created_by.eq.${user.id}`).maybeSingle(),
       supabase
@@ -238,6 +240,7 @@ export function TasksClient() {
       category: values.category,
       fixed_task_id: null,
       done: false,
+      removed: false,
       created_by: user?.id ?? null,
       updated_by: user.id,
     });
@@ -263,14 +266,23 @@ export function TasksClient() {
     setTaskNotice(!task.done ? "任务已标记为完成。" : "任务已重新改为未完成。");
   };
 
-  const handleDeleteTask = async (taskId: string) => {
+  const handleDeleteTask = async (task: DailyTaskRecord) => {
     const supabase = createBrowserSupabaseClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user?.id) return;
-    await supabase.from("daily_task_records").delete().eq("id", taskId).or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
-    setTaskNotice("自定义任务已删除。");
+    if (task.fixed_task_id) {
+      await supabase
+        .from("daily_task_records")
+        .update({ removed: true, updated_by: user.id })
+        .eq("id", task.id)
+        .or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
+      setTaskNotice("该固定任务已从今天的清单移除，不会影响之后自动生成。");
+      return;
+    }
+    await supabase.from("daily_task_records").delete().eq("id", task.id).or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
+    setTaskNotice("临时任务已删除。");
   };
 
   const startEditFixedTask = (task: DailyTaskRecord) => {
@@ -411,6 +423,23 @@ export function TasksClient() {
             </CardHeader>
             <CardContent className="space-y-5">
               {taskNotice ? <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{taskNotice}</div> : null}
+              <form className="grid gap-4 rounded-2xl border bg-secondary/30 p-4 md:grid-cols-[1fr_180px_auto]" onSubmit={handleCreateTask}>
+                <div>
+                  <Label className="mb-2 block">+ 添加今日临时任务</Label>
+                  <Input placeholder="例如：整理新客户样品报价表" {...taskForm.register("title")} />
+                  <p className="mt-1 text-xs text-destructive">{taskForm.formState.errors.title?.message}</p>
+                </div>
+                <div>
+                  <Label className="mb-2 block">分类</Label>
+                  <Select options={TASK_CATEGORIES.map((item) => ({ value: item.value, label: item.label }))} {...taskForm.register("category")} />
+                </div>
+                <div className="flex items-end">
+                  <Button type="submit" className="w-full" disabled={creatingTask}>
+                    {creatingTask ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                    添加任务
+                  </Button>
+                </div>
+              </form>
               {taskSections.map((section) => (
                 <div key={section.key} className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -464,43 +493,15 @@ export function TasksClient() {
                               <Pencil className="h-4 w-4 text-muted-foreground" />
                             </Button>
                           ) : null}
-                          {!task.fixed_task_id ? (
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(task.id)}>
-                              <Trash2 className="h-4 w-4 text-muted-foreground" />
-                            </Button>
-                          ) : null}
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(task)}>
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
+                          </Button>
                         </div>
                       </div>
                     )})}
                   </div>
                 </div>
               ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>+ 添加今日临时任务</CardTitle>
-              <p className="text-sm text-muted-foreground">只影响你自己的当天任务列表，后面可以删除。</p>
-            </CardHeader>
-            <CardContent>
-              <form className="grid gap-4 md:grid-cols-[1fr_180px_auto]" onSubmit={handleCreateTask}>
-                <div>
-                  <Label className="mb-2 block">任务标题</Label>
-                  <Input placeholder="例如：整理新客户样品报价表" {...taskForm.register("title")} />
-                  <p className="mt-1 text-xs text-destructive">{taskForm.formState.errors.title?.message}</p>
-                </div>
-                <div>
-                  <Label className="mb-2 block">分类</Label>
-                  <Select options={TASK_CATEGORIES.map((item) => ({ value: item.value, label: item.label }))} {...taskForm.register("category")} />
-                </div>
-                <div className="flex items-end">
-                  <Button type="submit" className="w-full" disabled={creatingTask}>
-                    {creatingTask ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                    添加任务
-                  </Button>
-                </div>
-              </form>
             </CardContent>
           </Card>
         </div>

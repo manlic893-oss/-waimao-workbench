@@ -22,6 +22,8 @@ cp .env.example .env.local
 NEXT_PUBLIC_SUPABASE_URL=你的 Supabase URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的 Supabase Anon Key
 ANTHROPIC_API_KEY=你的 Claude API Key
+OPENAI_API_KEY=你的 OpenAI API Key
+OPENAI_VISION_MODEL=gpt-4.1-mini
 ```
 
 3. 在 Supabase SQL 编辑器执行 [supabase/schema.sql](/Users/chenmanli/Documents/New%20project/supabase/schema.sql)。
@@ -65,6 +67,14 @@ npm run dev
 - 在 `/knowledge/products` 新增或编辑产品资料，确认团队账号都能看到
 - 在 `/knowledge/personal` 新增一条个人学习记录，确认只有当前账号能看到
 - 粘贴链接点击“抓取”，确认标题和摘要会自动带入
+
+### 6. AI 工具
+
+- 打开 `/tools/alibaba-title`
+- 上传一张水晶灯饰配件图片，填写可选材质、尺寸、用途或参考关键词
+- 点击“生成标题”，确认返回 3 个英文标题
+- 检查每个标题不超过 128 个英文字符，且不包含任何标点符号
+- 在“人工确认标题”中保存最终标题，确认历史记录可重新打开查看
 
 ## 部署
 

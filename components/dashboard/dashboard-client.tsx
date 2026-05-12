@@ -89,7 +89,7 @@ export function DashboardClient() {
     };
   }, [loadDashboard]);
 
-  const currentMonthStats = useMemo(() => {
+  const aggregatedStats = useMemo(() => {
     const grouped = new Map<
       string,
       {
@@ -121,19 +121,23 @@ export function DashboardClient() {
       grouped.set(item.date, entry);
     }
 
-    const normalized = Array.from(grouped.entries()).map(([date, value]) => ({
-      date,
-      ...value,
-      notes: value.notes.join("\n"),
-      ai_summary: value.ai_summary.join("\n"),
-    }));
+    return Array.from(grouped.entries())
+      .map(([date, value]) => ({
+        date,
+        ...value,
+        notes: value.notes.join("\n"),
+        ai_summary: value.ai_summary.join("\n"),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [stats]);
 
+  const currentMonthStats = useMemo(() => {
     const now = new Date();
-    return normalized.filter((item) => {
+    return aggregatedStats.filter((item) => {
       const date = new Date(item.date);
       return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
     });
-  }, [stats]);
+  }, [aggregatedStats]);
 
   const metricCards = [
     {
@@ -188,7 +192,7 @@ export function DashboardClient() {
   );
 
   const undoneTasks = tasks.filter((task) => !task.done).length;
-  const recentReports = currentMonthStats.slice(-5).reverse();
+  const recentReports = aggregatedStats.slice(-5).reverse();
 
   if (!hasSupabaseEnv()) {
     return <EnvNotice />;

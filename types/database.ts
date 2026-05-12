@@ -130,6 +130,7 @@ export interface Database {
           title: string;
           category: TaskCategory;
           done: boolean;
+          removed: boolean;
           created_at: string;
           updated_at: string;
           created_by: string | null;
@@ -143,6 +144,7 @@ export interface Database {
           title: string;
           category: TaskCategory;
           done?: boolean;
+          removed?: boolean;
           created_at?: string;
           updated_at?: string;
           created_by?: string | null;
@@ -243,6 +245,61 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["product_knowledge"]["Insert"]>;
       };
+      alibaba_title_generations: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          image_path: string;
+          sku: string | null;
+          confirmed_material: string | null;
+          confirmed_size: string | null;
+          confirmed_usage: string | null;
+          reference_text: string | null;
+          forbidden_words: string[];
+          product_identification: string | null;
+          possible_material: string | null;
+          shape_or_style: string | null;
+          recommended_keywords: string[];
+          keywords_to_avoid: string[];
+          titles: Json;
+          recommended_title: string | null;
+          reason: string | null;
+          risk_check: string[];
+          confirmed_title: string | null;
+          status: "generated" | "confirmed";
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          image_path: string;
+          sku?: string | null;
+          confirmed_material?: string | null;
+          confirmed_size?: string | null;
+          confirmed_usage?: string | null;
+          reference_text?: string | null;
+          forbidden_words?: string[];
+          product_identification?: string | null;
+          possible_material?: string | null;
+          shape_or_style?: string | null;
+          recommended_keywords?: string[];
+          keywords_to_avoid?: string[];
+          titles?: Json;
+          recommended_title?: string | null;
+          reason?: string | null;
+          risk_check?: string[];
+          confirmed_title?: string | null;
+          status?: "generated" | "confirmed";
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["alibaba_title_generations"]["Insert"]>;
+      };
       knowledge_articles: {
         Row: {
           id: string;
@@ -283,4 +340,5 @@ export type DailyTaskRecord = Database["public"]["Tables"]["daily_task_records"]
 export type DailyTask = Database["public"]["Tables"]["daily_tasks"]["Row"];
 export type DailyStat = Database["public"]["Tables"]["daily_stats"]["Row"];
 export type ProductKnowledge = Database["public"]["Tables"]["product_knowledge"]["Row"];
+export type AlibabaTitleGeneration = Database["public"]["Tables"]["alibaba_title_generations"]["Row"];
 export type KnowledgeArticle = Database["public"]["Tables"]["knowledge_articles"]["Row"];

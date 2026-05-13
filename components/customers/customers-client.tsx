@@ -90,6 +90,10 @@ export function CustomersClient() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [quickSubmitting, setQuickSubmitting] = useState(false);
+  const [logSubmitting, setLogSubmitting] = useState(false);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editingLogContent, setEditingLogContent] = useState("");
+  const [logActionId, setLogActionId] = useState<string | null>(null);
 
   const customerForm = useForm<CustomerFormValues>({
     resolver: zodResolver(customerSchema),
@@ -380,36 +384,98 @@ export function CustomersClient() {
 
   const handleAddLog = logForm.handleSubmit(async (values) => {
     if (!selectedCustomer) return;
+    if (logSubmitting) return;
+    const supabase = createBrowserSupabaseClient();
+    setLogSubmitting(true);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    try {
+      const content = values.content.trim();
+      const { error } = await supabase.from("customer_logs").insert({
+        customer_id: selectedCustomer.id,
+        user_id: user?.id ?? null,
+        content,
+        created_by: user?.id ?? null,
+      });
+
+      if (!error) {
+        const nextFollowDate =
+          selectedCustomer.grade === "A" && selectedCustomer.status === "closed"
+            ? addOneMonth(new Date())
+            : addBusinessDays(new Date(), 3);
+
+        await supabase
+          .from("customers")
+          .update({
+            next_follow_date: nextFollowDate,
+            updated_by: user?.id ?? null,
+          })
+          .eq("id", selectedCustomer.id);
+
+        logForm.reset({ content: "" });
+        await loadCustomers();
+      }
+    } finally {
+      setLogSubmitting(false);
+    }
+  });
+
+  const startEditLog = (log: CustomerLog) => {
+    setEditingLogId(log.id);
+    setEditingLogContent(log.content);
+  };
+
+  const handleSaveLogEdit = async (log: CustomerLog) => {
+    const nextContent = editingLogContent.trim();
+    if (!nextContent) return;
+
     const supabase = createBrowserSupabaseClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const { error } = await supabase.from("customer_logs").insert({
-      customer_id: selectedCustomer.id,
-      user_id: user?.id ?? null,
-      content: values.content,
-      created_by: user?.id ?? null,
-    });
-
-    if (!error) {
-      const nextFollowDate =
-        selectedCustomer.grade === "A" && selectedCustomer.status === "closed"
-          ? addOneMonth(new Date())
-          : addBusinessDays(new Date(), 3);
-
+    setLogActionId(log.id);
+    try {
       await supabase
-        .from("customers")
+        .from("customer_logs")
         .update({
-          next_follow_date: nextFollowDate,
-          updated_by: user?.id ?? null,
+          content: nextContent,
+          user_id: user?.id ?? null,
+          created_by: log.created_by ?? user?.id ?? null,
         })
-        .eq("id", selectedCustomer.id);
+        .eq("id", log.id)
+        .or(`user_id.eq.${user?.id},created_by.eq.${user?.id}`);
 
-      logForm.reset({ content: "" });
+      setEditingLogId(null);
+      setEditingLogContent("");
       await loadCustomers();
+    } finally {
+      setLogActionId(null);
     }
-  });
+  };
+
+  const handleDeleteLog = async (log: CustomerLog) => {
+    if (!window.confirm("确定删除这条沟通记录吗？")) return;
+
+    const supabase = createBrowserSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    setLogActionId(log.id);
+    try {
+      await supabase.from("customer_logs").delete().eq("id", log.id).or(`user_id.eq.${user?.id},created_by.eq.${user?.id}`);
+      if (editingLogId === log.id) {
+        setEditingLogId(null);
+        setEditingLogContent("");
+      }
+      await loadCustomers();
+    } finally {
+      setLogActionId(null);
+    }
+  };
 
   const handleCopyWhatsapp = async (value: string, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -698,8 +764,48 @@ export function CustomersClient() {
                       {activeLogs.length > 0 ? (
                         activeLogs.map((log) => (
                           <div key={log.id} className="rounded-2xl border bg-white/60 p-4">
-                            <p className="text-sm leading-6">{log.content}</p>
-                            <p className="mt-2 text-xs text-muted-foreground">{formatDate(log.created_at, "yyyy年MM月dd日 HH:mm")}</p>
+                            {editingLogId === log.id ? (
+                              <div className="space-y-3">
+                                <Textarea value={editingLogContent} rows={4} onChange={(event) => setEditingLogContent(event.target.value)} />
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setEditingLogId(null);
+                                      setEditingLogContent("");
+                                    }}
+                                  >
+                                    取消
+                                  </Button>
+                                  <Button type="button" onClick={() => void handleSaveLogEdit(log)} disabled={logActionId === log.id}>
+                                    {logActionId === log.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                    保存修改
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-sm leading-6">{log.content}</p>
+                                <div className="mt-3 flex items-center justify-between gap-3">
+                                  <p className="text-xs text-muted-foreground">{formatDate(log.created_at, "yyyy年MM月dd日 HH:mm")}</p>
+                                  <div className="flex items-center gap-1">
+                                    <Button type="button" variant="ghost" size="icon" onClick={() => startEditLog(log)}>
+                                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => void handleDeleteLog(log)}
+                                      disabled={logActionId === log.id}
+                                    >
+                                      {logActionId === log.id ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : <Trash2 className="h-4 w-4 text-muted-foreground" />}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </>
+                            )}
                           </div>
                         ))
                       ) : (
@@ -725,7 +831,10 @@ export function CustomersClient() {
                         <Textarea placeholder="记录本次沟通内容、客户反馈和下一步动作" {...logForm.register("content")} />
                         <ErrorText message={logForm.formState.errors.content?.message} />
                         <div className="flex justify-end">
-                          <Button type="submit">记录</Button>
+                          <Button type="submit" disabled={logSubmitting}>
+                            {logSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            记录
+                          </Button>
                         </div>
                       </form>
                     </CardContent>

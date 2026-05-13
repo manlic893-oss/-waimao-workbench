@@ -13,7 +13,6 @@ const navigation = [
   { href: "/customers", label: "客户管理" },
   { href: "/tasks", label: "每日清单" },
   { href: "/tools/quick-quote", label: "快捷报价" },
-  { href: "/tools/alibaba-title", label: "标题工具" },
   { href: "/tools/product-image-workflow", label: "产品图工作流" },
 ];
 

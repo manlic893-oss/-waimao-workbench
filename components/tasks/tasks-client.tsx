@@ -25,7 +25,7 @@ import { FIXED_TASK_TEMPLATES, TASK_CATEGORIES } from "@/lib/constants";
 import { hasSupabaseEnv } from "@/lib/env";
 import { formatDate, toDateInputValue } from "@/lib/utils";
 import { statsSchema, taskSchema, type StatsFormValues, type TaskFormValues } from "@/lib/validators/task";
-import type { Customer, DailyStat, DailyTaskRecord, FixedTask } from "@/types/database";
+import type { DailyStat, DailyTaskRecord, FixedTask } from "@/types/database";
 
 export function TasksClient() {
   const router = useRouter();
@@ -109,8 +109,9 @@ export function TasksClient() {
 
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user?.id) return;
 
     const allFixedTasks = await seedFixedTasksIfNeeded();
@@ -157,7 +158,7 @@ export function TasksClient() {
       supabase.from("daily_stats").select("*").eq("date", dateKey).eq("user_id", user.id).maybeSingle(),
       supabase
         .from("customers")
-        .select("id,next_follow_date")
+        .select("id", { count: "exact", head: true })
         .lte("next_follow_date", dateKey)
         .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`),
     ]);
@@ -174,7 +175,7 @@ export function TasksClient() {
     }
 
     if (!recordsResult.error) setTasks((recordsResult.data ?? []) as DailyTaskRecord[]);
-    if (!customersResult.error) setDueCount(((customersResult.data ?? []) as Array<Pick<Customer, "id" | "next_follow_date">>).length);
+    if (!customersResult.error) setDueCount(customersResult.count ?? 0);
 
     if (!statsResult.error) {
       setStat((statsResult.data as DailyStat | null) ?? null);
@@ -257,8 +258,9 @@ export function TasksClient() {
     setCreatingTask(true);
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user?.id) {
       setCreatingTask(false);
       return;
@@ -286,8 +288,9 @@ export function TasksClient() {
   const handleToggleTask = async (task: DailyTaskRecord) => {
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user?.id) return;
     await supabase
       .from("daily_task_records")
@@ -300,8 +303,9 @@ export function TasksClient() {
   const handleDeleteTask = async (task: DailyTaskRecord) => {
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user?.id) return;
     if (task.fixed_task_id) {
       await supabase
@@ -326,8 +330,9 @@ export function TasksClient() {
     if (!task.fixed_task_id) return;
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user?.id) return;
     await Promise.all([
       supabase.from("fixed_tasks").update({ title: editingTitle }).eq("id", task.fixed_task_id),
@@ -343,8 +348,9 @@ export function TasksClient() {
     setStatsNotice("");
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user?.id) {
       setSavingStats(false);
       return;

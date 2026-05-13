@@ -138,28 +138,23 @@ export function CustomersClient() {
 
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
 
-    const customerQuery = supabase.from("customers").select("*").order("updated_at", { ascending: false });
-    const logQuery = supabase
-      .from("customer_logs")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const customerQuery = supabase
+      .from("customers")
+      .select("id,name,country,address,phone,source,grade,status,whatsapp,email,product,next_follow_date,assigned_to,notes,created_at,updated_at,created_by,updated_by")
+      .order("updated_at", { ascending: false });
     const teamCountQuery = supabase.from("customers").select("*", { count: "exact", head: true });
 
-    const [customersResult, logsResult, summaryResult] = await Promise.all([
+    const [customersResult, summaryResult] = await Promise.all([
       user?.id ? customerQuery.or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`) : customerQuery.limit(0),
-      user?.id ? logQuery.or(`user_id.eq.${user.id},created_by.eq.${user.id}`) : logQuery.limit(0),
       teamCountQuery,
     ]);
 
     if (!customersResult.error) {
       setCustomers((customersResult.data ?? []) as Customer[]);
-    }
-
-    if (!logsResult.error) {
-      setLogs((logsResult.data ?? []) as CustomerLog[]);
     }
 
     if (!summaryResult.error) {
@@ -180,13 +175,63 @@ export function CustomersClient() {
     const channel = supabase
       .channel("customers-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "customers" }, loadCustomers)
-      .on("postgres_changes", { event: "*", schema: "public", table: "customer_logs" }, loadCustomers)
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [loadCustomers]);
+
+  const loadCustomerLogs = useCallback(async (customerId: string) => {
+    if (!hasSupabaseEnv()) return;
+
+    const supabase = createBrowserSupabaseClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
+
+    if (!user?.id) {
+      setLogs([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("customer_logs")
+      .select("id,customer_id,user_id,content,created_at,created_by")
+      .eq("customer_id", customerId)
+      .or(`user_id.eq.${user.id},created_by.eq.${user.id}`)
+      .order("created_at", { ascending: false });
+
+    if (!error) {
+      setLogs((data ?? []) as CustomerLog[]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!detailOpen || !selectedCustomer?.id) {
+      setLogs([]);
+      return;
+    }
+
+    void loadCustomerLogs(selectedCustomer.id);
+
+    const supabase = createBrowserSupabaseClient();
+    const channel = supabase
+      .channel(`customer-logs-${selectedCustomer.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "customer_logs", filter: `customer_id=eq.${selectedCustomer.id}` },
+        () => {
+          void loadCustomerLogs(selectedCustomer.id);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [detailOpen, loadCustomerLogs, selectedCustomer?.id]);
 
   useEffect(() => {
     const filter = searchParams.get("filter");
@@ -236,7 +281,7 @@ export function CustomersClient() {
       });
   }, [activeFilter, customers]);
 
-  const activeLogs = logs.filter((item) => item.customer_id === selectedCustomer?.id);
+  const activeLogs = logs;
   const dueTodayCustomers = customers.filter((customer) => isDueTodayOrOverdue(customer.next_follow_date));
 
   const resetCustomerForm = (customer?: Customer | null) => {
@@ -290,8 +335,9 @@ export function CustomersClient() {
 
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
+      const user = session?.user;
 
       const payload = buildCustomerPayload(values, user?.id ?? null);
 
@@ -321,8 +367,9 @@ export function CustomersClient() {
 
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
+      const user = session?.user;
 
       const { data: insertedCustomer, error } = await supabase
         .from("customers")
@@ -388,8 +435,9 @@ export function CustomersClient() {
     const supabase = createBrowserSupabaseClient();
     setLogSubmitting(true);
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
 
     try {
       const content = values.content.trim();
@@ -415,7 +463,7 @@ export function CustomersClient() {
           .eq("id", selectedCustomer.id);
 
         logForm.reset({ content: "" });
-        await loadCustomers();
+        await loadCustomerLogs(selectedCustomer.id);
       }
     } finally {
       setLogSubmitting(false);
@@ -433,8 +481,9 @@ export function CustomersClient() {
 
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
 
     setLogActionId(log.id);
     try {
@@ -450,7 +499,7 @@ export function CustomersClient() {
 
       setEditingLogId(null);
       setEditingLogContent("");
-      await loadCustomers();
+      await loadCustomerLogs(log.customer_id);
     } finally {
       setLogActionId(null);
     }
@@ -461,8 +510,9 @@ export function CustomersClient() {
 
     const supabase = createBrowserSupabaseClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
 
     setLogActionId(log.id);
     try {
@@ -471,7 +521,7 @@ export function CustomersClient() {
         setEditingLogId(null);
         setEditingLogContent("");
       }
-      await loadCustomers();
+      await loadCustomerLogs(log.customer_id);
     } finally {
       setLogActionId(null);
     }

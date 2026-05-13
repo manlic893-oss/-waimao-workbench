@@ -11,7 +11,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { hasSupabaseEnv } from "@/lib/env";
 import { formatDate, toDateInputValue, isDueTodayOrOverdue } from "@/lib/utils";
 import { CUSTOMER_STATUSES } from "@/lib/constants";
-import type { Customer, DailyStat, DailyTaskRecord } from "@/types/database";
+import type { Customer, DailyStat } from "@/types/database";
 
 const pieColors = ["#3B5BDB", "#748FFC", "#A5B4FC", "#CBD5E1", "#8B5CF6", "#22C55E", "#F59E0B"];
 
@@ -21,10 +21,13 @@ type TeamCustomerDashboard = {
   funnelData: Array<{ status: string; value: number }>;
 };
 
+type DashboardCustomerPreview = Pick<Customer, "id" | "name" | "product" | "next_follow_date">;
+type DashboardStatPreview = Pick<DailyStat, "id" | "date" | "inquiry_count" | "rfq_sent" | "new_products" | "orders_closed" | "notes" | "ai_summary">;
+
 export function DashboardClient() {
-  const [ownCustomers, setOwnCustomers] = useState<Customer[]>([]);
-  const [stats, setStats] = useState<DailyStat[]>([]);
-  const [tasks, setTasks] = useState<DailyTaskRecord[]>([]);
+  const [ownCustomers, setOwnCustomers] = useState<DashboardCustomerPreview[]>([]);
+  const [stats, setStats] = useState<DashboardStatPreview[]>([]);
+  const [undoneTasks, setUndoneTasks] = useState(0);
   const [teamDashboard, setTeamDashboard] = useState<TeamCustomerDashboard | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -38,26 +41,28 @@ export function DashboardClient() {
     const today = new Date();
     const thirtyDaysAgo = subDays(today, 29);
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
 
     const [customersResult, teamCustomersResult, statsResult, tasksResult] = await Promise.all([
       user?.id
         ? supabase
             .from("customers")
-            .select("*")
+            .select("id,name,product,next_follow_date")
             .or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
         : supabase.from("customers").select("*").limit(0),
       supabase.rpc("get_customer_dashboard_aggregate"),
       supabase
         .from("daily_stats")
-        .select("*")
+        .select("id,date,inquiry_count,rfq_sent,new_products,orders_closed,notes,ai_summary")
         .gte("date", toDateInputValue(thirtyDaysAgo))
         .order("date", { ascending: true }),
       supabase
         .from("daily_task_records")
-        .select("*")
+        .select("id", { count: "exact", head: true })
         .eq("date", toDateInputValue(today))
+        .eq("done", false)
         .or(user?.id ? `user_id.eq.${user.id},created_by.eq.${user.id}` : "id.is.null"),
     ]);
 
@@ -66,7 +71,7 @@ export function DashboardClient() {
       setTeamDashboard(teamCustomersResult.data as TeamCustomerDashboard);
     }
     if (!statsResult.error) setStats(statsResult.data ?? []);
-    if (!tasksResult.error) setTasks(tasksResult.data ?? []);
+    if (!tasksResult.error) setUndoneTasks(tasksResult.count ?? 0);
 
     setLoading(false);
   }, []);
@@ -191,7 +196,6 @@ export function DashboardClient() {
     [ownCustomers],
   );
 
-  const undoneTasks = tasks.filter((task) => !task.done).length;
   const recentReports = aggregatedStats.slice(-5).reverse();
 
   if (!hasSupabaseEnv()) {

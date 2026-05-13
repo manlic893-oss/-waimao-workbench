@@ -340,6 +340,7 @@ export function TasksClient() {
 
   const handleSaveStats = statsForm.handleSubmit(async (values) => {
     setSavingStats(true);
+    setStatsNotice("");
     const supabase = createBrowserSupabaseClient();
     const {
       data: { user },
@@ -350,9 +351,8 @@ export function TasksClient() {
     }
 
     const savePayload = {
-        id: stat?.id,
-        date: dateKey,
-        user_id: user.id,
+      date: dateKey,
+      user_id: user.id,
       inquiry_count: values.inquiry_count,
       rfq_sent: values.rfq_sent,
       new_products: values.new_products,
@@ -364,35 +364,59 @@ export function TasksClient() {
       updated_by: user.id,
     };
 
-    await supabase.from("daily_stats").upsert(
-      {
-        ...savePayload,
-      },
-      { onConflict: "date,user_id" },
-    );
+    try {
+      let savedStatId = stat?.id ?? null;
 
-    const summaryResponse = await fetch("/api/daily-summary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    });
-    const summaryData = (await summaryResponse.json()) as { summary: string; encouragement: string };
+      if (stat?.id) {
+        const { error } = await supabase
+          .from("daily_stats")
+          .update(savePayload)
+          .eq("id", stat.id)
+          .or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("daily_stats")
+          .upsert(
+            {
+              ...savePayload,
+            },
+            { onConflict: "date,user_id" },
+          )
+          .select("id")
+          .single();
+        if (error) throw error;
+        savedStatId = data?.id ?? null;
+      }
 
-    await supabase
-      .from("daily_stats")
-      .update({
-        ai_summary: `${summaryData.summary}\n${summaryData.encouragement}`,
-        submitted_at: new Date().toISOString(),
-        updated_by: user.id,
-      })
-      .eq("date", dateKey)
-      .eq("user_id", user.id);
+      const summaryResponse = await fetch("/api/daily-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const summaryData = (await summaryResponse.json()) as { summary: string; encouragement: string };
 
-    setDailySummary(summaryData);
-    setSummaryOpen(true);
-    setStatsNotice("今日日报已提交，可以继续回来修改。");
-    await hydrateForDate();
-    setSavingStats(false);
+      const { error: summaryError } = await supabase
+        .from("daily_stats")
+        .update({
+          ai_summary: `${summaryData.summary}\n${summaryData.encouragement}`,
+          submitted_at: new Date().toISOString(),
+          updated_by: user.id,
+        })
+        .eq("id", savedStatId ?? stat?.id ?? "")
+        .or(`user_id.eq.${user.id},created_by.eq.${user.id}`);
+      if (summaryError) throw summaryError;
+
+      setDailySummary(summaryData);
+      setSummaryOpen(true);
+      setStatsNotice("今日日报已提交，可以继续回来修改。");
+      await hydrateForDate();
+    } catch (error) {
+      console.error("保存日报失败", error);
+      setStatsNotice("日报保存失败，请再点一次提交；如果还是不行，我已经在继续帮你排查。");
+    } finally {
+      setSavingStats(false);
+    }
   });
 
   if (!hasSupabaseEnv()) {

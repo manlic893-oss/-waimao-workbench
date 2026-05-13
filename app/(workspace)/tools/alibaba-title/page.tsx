@@ -1,5 +1,5 @@
-import { AlibabaTitleClient } from "@/components/tools/alibaba-title-client";
+import { notFound } from "next/navigation";
 
 export default function AlibabaTitlePage() {
-  return <AlibabaTitleClient />;
+  notFound();
 }

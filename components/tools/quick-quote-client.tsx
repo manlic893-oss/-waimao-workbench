@@ -18,37 +18,40 @@ import type { Json, QuickQuoteReply } from "@/types/database";
 type QuoteItem = {
   id: string;
   productName: string;
+  pcsPerUnit: string;
   unitPrice: string;
   qty: string;
 };
 
 type StoredQuoteItem = {
   productName: string;
+  pcsPerUnit: number | null;
   unitPrice: number;
   qty: number;
   lineTotal: number;
 };
 
 const defaultItems: QuoteItem[] = [
-  { id: "400mm-chain", productName: "400mm chain", unitPrice: "2.23", qty: "6000" },
-  { id: "800mm-chain", productName: "800mm chain", unitPrice: "4.64", qty: "10000" },
+  { id: "400mm-chain", productName: "400mm chain", pcsPerUnit: "2", unitPrice: "2.23", qty: "6000" },
+  { id: "800mm-chain", productName: "800mm chain", pcsPerUnit: "4", unitPrice: "4.64", qty: "10000" },
 ];
 
 const emptyItem = (): QuoteItem => ({
   id: crypto.randomUUID(),
   productName: "",
+  pcsPerUnit: "",
   unitPrice: "",
   qty: "",
 });
 
 const defaultForm = {
   title: "400mm chain + 800mm chain quote",
-  packaging: "standard carton packaging",
-  productionTime: "14-20 days",
+  packaging: "Individual poly bag",
+  productionTime: "14-20 Days",
   airShippingCost: "15452",
-  airShippingTime: "7-20 days",
+  airShippingTime: "7-20 Days",
   seaShippingCost: "4622",
-  seaShippingTime: "55-75 days",
+  seaShippingTime: "55-75 Days",
   internalNote: "",
 };
 
@@ -77,9 +80,11 @@ function normalizeItems(items: QuoteItem[]): StoredQuoteItem[] {
     .map((item) => {
       const unitPrice = toNumber(item.unitPrice);
       const qty = toNumber(item.qty);
+      const pcsPerUnit = item.pcsPerUnit.trim() ? toNumber(item.pcsPerUnit) : null;
 
       return {
-        productName: item.productName.trim() || "Product",
+        productName: item.productName.trim(),
+        pcsPerUnit,
         unitPrice,
         qty,
         lineTotal: unitPrice * qty,
@@ -106,30 +111,66 @@ function buildQuoteText({
   seaShippingTime: string;
 }) {
   const productTotal = items.reduce((total, item) => total + item.lineTotal, 0);
-  const productFormula = items.map((item) => `$${formatUnitPrice(item.unitPrice)}*${formatMoney(item.qty, 0)}`).join("+");
   const airTotal = productTotal + airShippingCost;
   const seaTotal = productTotal + seaShippingCost;
+  const divider = "════════════════════════════════════════";
+  const quoteLines = ["QUOTATION", divider];
+  const completeItems = items.filter((item) => item.productName && item.unitPrice > 0 && item.qty > 0);
 
-  const lines = [
-    "Unit price:",
-    ...items.map((item) => `${item.productName}: $${formatUnitPrice(item.unitPrice)} USD / pc, Qty: ${formatMoney(item.qty, 0)}`),
-    "",
-    `Packaging: Comes with ${packaging.trim() || defaultForm.packaging}.`,
-    "",
-    `Product cost: ${productFormula}=${formatMoney(productTotal)} USD`,
-    `Production time: ${productionTime.trim() || defaultForm.productionTime}`,
-    "",
-    `Shipping cost by air, door to door: ${formatMoney(airShippingCost)} USD`,
-    `Shipping time: ${airShippingTime.trim() || defaultForm.airShippingTime}`,
-    "",
-    `Shipping cost by sea, door to door: ${formatMoney(seaShippingCost)} USD`,
-    `Shipping time: ${seaShippingTime.trim() || defaultForm.seaShippingTime}`,
-    "",
-    `Total cost: ${formatMoney(productTotal)}+${formatMoney(airShippingCost)}=${formatMoney(airTotal)} USD (shipping by air)`,
-    `Total cost: ${formatMoney(productTotal)}+${formatMoney(seaShippingCost)}=${formatMoney(seaTotal)} USD (shipping by sea)`,
-  ];
+  if (completeItems.length) {
+    quoteLines.push(
+      "",
+      "UNIT PRICE & QUANTITY",
+      ...completeItems.map((item) => {
+        const unitText = item.pcsPerUnit ? ` (${formatMoney(item.pcsPerUnit, 0)} pcs/unit)` : "";
+        return `• ${item.productName}${unitText} : $${formatUnitPrice(item.unitPrice)} USD × ${formatMoney(item.qty, 0)} pcs`;
+      }),
+    );
+  }
 
-  return { productTotal, airTotal, seaTotal, quoteText: lines.join("\n") };
+  if (packaging.trim()) {
+    quoteLines.push("", "PACKAGING", `• ${packaging.trim()}`);
+  }
+
+  if (productionTime.trim()) {
+    quoteLines.push("", `PRODUCTION TIME: ${productionTime.trim()}`);
+  }
+
+  if (completeItems.length) {
+    quoteLines.push(
+      "",
+      "PRODUCT COST",
+      ...completeItems.map((item) => `  $${formatUnitPrice(item.unitPrice)} × ${formatMoney(item.qty, 0)} = $${formatMoney(item.lineTotal)}`),
+      `  Subtotal: $${formatMoney(productTotal)}`,
+    );
+  }
+
+  const hasAirShipping = airShippingCost > 0 || airShippingTime.trim();
+  const hasSeaShipping = seaShippingCost > 0 || seaShippingTime.trim();
+
+  if (hasAirShipping || hasSeaShipping) {
+    quoteLines.push("", "SHIPPING COST (Door to Door)");
+    if (hasAirShipping) {
+      const airDetails = [airShippingCost > 0 ? `$${formatMoney(airShippingCost)}` : "", airShippingTime.trim() ? `Shipping Time: ${airShippingTime.trim()}` : ""].filter(Boolean);
+      quoteLines.push(`  ✈ Air freight: ${airDetails.join("  |  ")}`);
+    }
+    if (hasSeaShipping) {
+      const seaDetails = [seaShippingCost > 0 ? `$${formatMoney(seaShippingCost)}` : "", seaShippingTime.trim() ? `Shipping Time: ${seaShippingTime.trim()}` : ""].filter(Boolean);
+      quoteLines.push(`  🚢 Sea freight: ${seaDetails.join("  |  ")}`);
+    }
+  }
+
+  if (completeItems.length && (airShippingCost > 0 || seaShippingCost > 0)) {
+    quoteLines.push("", "TOTAL COST");
+    if (airShippingCost > 0) {
+      quoteLines.push(`  ✈ By Air: $${formatMoney(productTotal)} + $${formatMoney(airShippingCost)} = $${formatMoney(airTotal)}`);
+    }
+    if (seaShippingCost > 0) {
+      quoteLines.push(`  🚢 By Sea: $${formatMoney(productTotal)} + $${formatMoney(seaShippingCost)} = $${formatMoney(seaTotal)}`);
+    }
+  }
+
+  return { productTotal, airTotal, seaTotal, quoteText: quoteLines.join("\n") };
 }
 
 function itemsFromRecord(record: QuickQuoteReply): QuoteItem[] {
@@ -140,6 +181,7 @@ function itemsFromRecord(record: QuickQuoteReply): QuoteItem[] {
     return {
       id: `${record.id}-${index}`,
       productName: String(value.productName ?? ""),
+      pcsPerUnit: String(value.pcsPerUnit ?? ""),
       unitPrice: String(value.unitPrice ?? ""),
       qty: String(value.qty ?? ""),
     };
@@ -232,12 +274,12 @@ export function QuickQuoteClient() {
       user_id: user?.id ?? null,
       title: form.title.trim() || quoteItems.map((item) => item.productName).join(" + "),
       items: quoteItems as unknown as Json,
-      packaging: form.packaging.trim() || defaultForm.packaging,
-      production_time: form.productionTime.trim() || defaultForm.productionTime,
+      packaging: form.packaging.trim(),
+      production_time: form.productionTime.trim(),
       air_shipping_cost: toNumber(form.airShippingCost),
-      air_shipping_time: form.airShippingTime.trim() || defaultForm.airShippingTime,
+      air_shipping_time: form.airShippingTime.trim(),
       sea_shipping_cost: toNumber(form.seaShippingCost),
-      sea_shipping_time: form.seaShippingTime.trim() || defaultForm.seaShippingTime,
+      sea_shipping_time: form.seaShippingTime.trim(),
       product_total: calculated.productTotal,
       air_total: calculated.airTotal,
       sea_total: calculated.seaTotal,
@@ -377,9 +419,17 @@ export function QuickQuoteClient() {
                           Remove
                         </Button>
                       </div>
-                      <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)]">
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(110px,0.6fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)]">
                         <Field label="Product name">
                           <Input value={item.productName} onChange={(event) => updateItem(item.id, "productName", event.target.value)} />
+                        </Field>
+                        <Field label="Pcs/unit">
+                          <Input
+                            inputMode="numeric"
+                            placeholder="可选"
+                            value={item.pcsPerUnit}
+                            onChange={(event) => updateItem(item.id, "pcsPerUnit", event.target.value)}
+                          />
                         </Field>
                         <Field label="Unit price USD">
                           <Input

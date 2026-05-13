@@ -247,6 +247,28 @@ create table if not exists public.alibaba_title_generations (
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
 
+create table if not exists public.quick_quote_replies (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  title text not null,
+  items jsonb not null default '[]'::jsonb,
+  packaging text not null,
+  production_time text not null,
+  air_shipping_cost numeric not null default 0,
+  air_shipping_time text not null,
+  sea_shipping_cost numeric not null default 0,
+  sea_shipping_time text not null,
+  product_total numeric not null default 0,
+  air_total numeric not null default 0,
+  sea_total numeric not null default 0,
+  quote_text text not null,
+  internal_note text,
+  created_by uuid references auth.users(id) on delete set null,
+  updated_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  updated_at timestamptz not null default timezone('utc'::text, now())
+);
+
 create table if not exists public.knowledge_articles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete cascade,
@@ -273,6 +295,8 @@ create index if not exists idx_knowledge_articles_user_id on public.knowledge_ar
 create index if not exists idx_product_knowledge_category on public.product_knowledge(category);
 create index if not exists idx_alibaba_title_generations_user_id on public.alibaba_title_generations(user_id);
 create index if not exists idx_alibaba_title_generations_created_at on public.alibaba_title_generations(created_at desc);
+create index if not exists idx_quick_quote_replies_user_id on public.quick_quote_replies(user_id);
+create index if not exists idx_quick_quote_replies_created_at on public.quick_quote_replies(created_at desc);
 create unique index if not exists idx_daily_task_records_owner_unique
 on public.daily_task_records(date, created_by, fixed_task_id)
 where fixed_task_id is not null and created_by is not null;
@@ -325,6 +349,12 @@ before update on public.alibaba_title_generations
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists set_quick_quote_replies_updated_at on public.quick_quote_replies;
+create trigger set_quick_quote_replies_updated_at
+before update on public.quick_quote_replies
+for each row
+execute function public.set_updated_at();
+
 drop trigger if exists set_daily_task_records_updated_at on public.daily_task_records;
 create trigger set_daily_task_records_updated_at
 before update on public.daily_task_records
@@ -339,6 +369,7 @@ alter table public.daily_tasks enable row level security;
 alter table public.daily_stats enable row level security;
 alter table public.product_knowledge enable row level security;
 alter table public.alibaba_title_generations enable row level security;
+alter table public.quick_quote_replies enable row level security;
 alter table public.knowledge_articles enable row level security;
 
 drop policy if exists "authenticated users can manage customers" on public.customers;
@@ -518,6 +549,36 @@ with check (user_id = auth.uid() or created_by = auth.uid());
 
 create policy "users can delete own alibaba_title_generations"
 on public.alibaba_title_generations
+for delete
+to authenticated
+using (user_id = auth.uid() or created_by = auth.uid());
+
+drop policy if exists "users can view own quick_quote_replies" on public.quick_quote_replies;
+drop policy if exists "users can insert own quick_quote_replies" on public.quick_quote_replies;
+drop policy if exists "users can update own quick_quote_replies" on public.quick_quote_replies;
+drop policy if exists "users can delete own quick_quote_replies" on public.quick_quote_replies;
+
+create policy "users can view own quick_quote_replies"
+on public.quick_quote_replies
+for select
+to authenticated
+using (user_id = auth.uid() or created_by = auth.uid());
+
+create policy "users can insert own quick_quote_replies"
+on public.quick_quote_replies
+for insert
+to authenticated
+with check (user_id = auth.uid() or created_by = auth.uid());
+
+create policy "users can update own quick_quote_replies"
+on public.quick_quote_replies
+for update
+to authenticated
+using (user_id = auth.uid() or created_by = auth.uid())
+with check (user_id = auth.uid() or created_by = auth.uid());
+
+create policy "users can delete own quick_quote_replies"
+on public.quick_quote_replies
 for delete
 to authenticated
 using (user_id = auth.uid() or created_by = auth.uid());

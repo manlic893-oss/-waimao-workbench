@@ -20,3 +20,11 @@ export function getAnthropicApiKey() {
 export function getOpenAIApiKey() {
   return process.env.OPENAI_API_KEY ?? null;
 }
+
+export function getDeepSeekApiKey() {
+  return process.env.DEEPSEEK_API_KEY ?? null;
+}
+
+export function getAIProvider() {
+  return process.env.AI_PROVIDER === "deepseek" ? "deepseek" : "openai";
+}

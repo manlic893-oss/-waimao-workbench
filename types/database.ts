@@ -300,6 +300,51 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["alibaba_title_generations"]["Insert"]>;
       };
+      quick_quote_replies: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          title: string;
+          items: Json;
+          packaging: string;
+          production_time: string;
+          air_shipping_cost: number;
+          air_shipping_time: string;
+          sea_shipping_cost: number;
+          sea_shipping_time: string;
+          product_total: number;
+          air_total: number;
+          sea_total: number;
+          quote_text: string;
+          internal_note: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          title: string;
+          items?: Json;
+          packaging: string;
+          production_time: string;
+          air_shipping_cost?: number;
+          air_shipping_time: string;
+          sea_shipping_cost?: number;
+          sea_shipping_time: string;
+          product_total?: number;
+          air_total?: number;
+          sea_total?: number;
+          quote_text: string;
+          internal_note?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["quick_quote_replies"]["Insert"]>;
+      };
       knowledge_articles: {
         Row: {
           id: string;
@@ -342,4 +387,5 @@ export type DailyStat = Database["public"]["Tables"]["daily_stats"]["Row"];
 export type DailyReportHistoryItem = DailyStat;
 export type ProductKnowledge = Database["public"]["Tables"]["product_knowledge"]["Row"];
 export type AlibabaTitleGeneration = Database["public"]["Tables"]["alibaba_title_generations"]["Row"];
+export type QuickQuoteReply = Database["public"]["Tables"]["quick_quote_replies"]["Row"];
 export type KnowledgeArticle = Database["public"]["Tables"]["knowledge_articles"]["Row"];

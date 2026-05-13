@@ -22,8 +22,11 @@ cp .env.example .env.local
 NEXT_PUBLIC_SUPABASE_URL=你的 Supabase URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的 Supabase Anon Key
 ANTHROPIC_API_KEY=你的 Claude API Key
+AI_PROVIDER=openai
 OPENAI_API_KEY=你的 OpenAI API Key
 OPENAI_VISION_MODEL=gpt-4.1-mini
+DEEPSEEK_API_KEY=你的 DeepSeek API Key
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
 3. 在 Supabase SQL 编辑器执行 [supabase/schema.sql](/Users/chenmanli/Documents/New%20project/supabase/schema.sql)。
@@ -75,6 +78,7 @@ npm run dev
 - 点击“生成标题”，确认返回 3 个英文标题
 - 检查每个标题不超过 128 个英文字符，且不包含任何标点符号
 - 在“人工确认标题”中保存最终标题，确认历史记录可重新打开查看
+- 如设置 `AI_PROVIDER=deepseek`，需要填写参考关键词、产品描述、同行标题、材质、尺寸或用途之一；DeepSeek 模式第一版不直接识别图片
 
 ## 部署
 
